@@ -79,7 +79,7 @@
                         const { data: { text } } = await worker.recognize(file);
                         
                         // PHONE REGEX (Your provided pattern)
-                        const phRE = /(?:(?:\+|00)420[\s\/]*)?\d{3}[\s-]?\d{3}[\s-]?\d{3}/;
+                        const phRE = /(?i:tel|tel\.|tel:|tel\.:)\s*(?:(?:\+|00)420[\s\/]*)?(\d{3})\s*(\d{3})\s*(\d{3})/;
                         const phMatch = text.match(phRE);
                         
                         // ADDRESS REGEX (Your provided pattern)
