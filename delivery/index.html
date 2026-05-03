@@ -53,11 +53,11 @@
             },
             extract(text) {
                 // Flattening text to help address regex cross line breaks
-                const clean = text.replace(/\n/g, ' ').replace(/\s+/g, ' ');
+                // const clean = text.replace(/\n/g, ' ').replace(/\s+/g, ' ');
                 
-                const phMatch = clean.match(this.patterns.phone);
-                const adMatch = clean.match(this.patterns.address);
-                const prMatch = clean.match(this.patterns.price);
+                const phMatch = text.match(this.patterns.phone);
+                const adMatch = text.match(this.patterns.address);
+                const prMatch = text.match(this.patterns.price);
                 
                 const data = {
                     phone: phMatch ? `${phMatch[1]}${phMatch[2]}${phMatch[3]}` : '',
@@ -68,8 +68,8 @@
                 // DEBUG LOGS
                 console.log("--- RAW OCR TEXT ---");
                 console.log(text); 
-                console.log("--- CLEANED TEXT FOR REGEX ---");
-                console.log(clean);
+                //console.log("--- CLEANED TEXT FOR REGEX ---");
+                //console.log(clean);
                 console.log("--- EXTRACTED DATA ---");
                 console.log(data);
 
