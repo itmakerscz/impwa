@@ -1,67 +1,67 @@
 // extractor.js
 export const Extractor = {
     patterns: {
-        // Updated to handle "Tel. 123 456 789", "TEL : 123456789", and "Tel: 123 456 789"
-        phone: /(?:tel|telefon)\s*[:.]?\s*(?:(?:\+|00)420[\s\/]*)?(\d{3})[\s\-]*(\d{3})[\s\-]*(\d{3})/i,
+        // Updated: Handles OCR reading "S" instead of "6" or "O" instead of "0" 
+        // Handles "TEL : 602..." and "Tel. 257..."
+        phone: /(?:tel|telefon)\s*[:.]?\s*(?:(?:\+|00)420[\s\/]*)?(\d|[SBO]){3}[\s\-]*(\d|[SBO]){3}[\s\-]*(\d|[SBO]){3}/i,
         
-        // Matches typical Czech address: Street Number, ZIP City
-        // e.g., "Václavské nám 47, Praha 1" or "V Podbabe 2549/15a Praha 6"
-        address: /([a-zA-Zá-žÁ-Ž0-ž\s\.]+\s\d+(?:\/\w+)?),?\s*(\d{3}\s\d{2})\s+([a-zA-Zá-žÁ-Ž0-ž\s]+)/i,
+        // Updated: Specifically looks for the Czech ZIP code format (5 digits) 
+        // to avoid picking up random item descriptions.
+        address: /(\d{3}\s?[0O\d]{2})\s+([a-zA-Zá-žÁ-Ž0-ž\s]{2,})/i,
         
-        // Matches "CELKEM KC 567,00", "Celkem: 49,00 Kc", or "C E L K E M 2800,00Kč"
-        // Captures the numeric part with the comma
-        price: /(?:CELKEM|SUMA|C\s*E\s*L\s*K\s*E\s*M)\s*[:.]?\s*(?:KC|KČ)?\s*([\d\s]+[.,][\d]{2})/i
+        // Updated: Handles cases where "CELKEM" is on one line and the price is on the next (VISA line)
+        // Also handles "." or "," as decimal separators and spaced "C E L K E M".
+        price: /(?:CELKEM|SUMA|C\s*E\s*L\s*K\s*E\s*M|VISA)\s*[:.]?\s*(?:KC|KČ)?\s*([\d\s]+[.,][\d]{2})/i
     },
 
     extract(text) {
         const lines = text.split('\n');
         let extracted = { phone: '', address: '', price: '' };
 
-        console.log("--- LINE BY LINE ANALYSIS ---");
+        // Helper to normalize OCR characters
+        const normalizeOCR = (str) => str.replace(/S/g, '6').replace(/O/g, '0').replace(/o/g, '0').replace(/i/g, '1');
 
         lines.forEach((line, index) => {
             const trimmedLine = line.trim();
             if (!trimmedLine) return;
 
-            console.log(`Line ${index}: "${trimmedLine}"`);
-
-            // 1. Phone Extraction
+            // 1. Phone: Normalize common OCR errors in numbers
             if (!extracted.phone) {
                 const phMatch = trimmedLine.match(this.patterns.phone);
                 if (phMatch) {
-                    extracted.phone = `${phMatch[1]}${phMatch[2]}${phMatch[3]}`;
+                    extracted.phone = normalizeOCR(`${phMatch[1]}${phMatch[2]}${phMatch[3]}`);
                 }
             }
 
-            // 2. Address Extraction (Attempts to match full address in one line)
+            // 2. Address: Look for ZIP code and City
             if (!extracted.address) {
                 const adMatch = trimmedLine.match(this.patterns.address);
                 if (adMatch) {
-                    // Reconstructs as "Street Number, ZIP City"
-                    extracted.address = `${adMatch[1].trim()}, ${adMatch[2]} ${adMatch[3].trim()}`;
+                    extracted.address = `${normalizeOCR(adMatch[1])} ${adMatch[2].trim()}`;
                 }
             }
 
-            // 3. Price Extraction
+            // 3. Price: Check for labels and values
             if (!extracted.price) {
                 const prMatch = trimmedLine.match(this.patterns.price);
                 if (prMatch) {
-                    // Removes spaces from number (e.g., "2 800,00" -> "2800,00")
-                    extracted.price = prMatch[1].replace(/\s/g, '') + ' Kč';
+                    extracted.price = prMatch[1].replace(/\s/g, '').replace('.', ',') + ' Kč';
                 }
             }
         });
 
-        // Fallback for multi-line addresses (like the Yves Rocher receipt)
-        // If address wasn't found in a single line, we look for the ZIP pattern specifically
-        if (!extracted.address) {
-            const zipMatch = text.match(/(\d{3}\s\d{2})\s+([a-zA-Zá-žÁ-Ž\s]+)/);
-            if (zipMatch) {
-                extracted.address = `${zipMatch[1]} ${zipMatch[2].trim()}`;
+        // Special Fallback: If price is empty but we see a line with just a monetary value 
+        // near the end of the receipt (common when "CELKEM" is on a separate line)
+        if (!extracted.price) {
+            for (let i = lines.length - 1; i >= 0; i--) {
+                const valMatch = lines[i].match(/(\d+[\s.,]\d{2})(?:\s*K[CČ])?$/i);
+                if (valMatch) {
+                    extracted.price = valMatch[1].replace(/\s/g, '').replace('.', ',') + ' Kč';
+                    break;
+                }
             }
         }
 
-        console.log("--- FINAL DATA ---", extracted);
         return extracted;
     }
 };
