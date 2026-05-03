@@ -59,21 +59,14 @@
     <script>
         const { createApp, ref, computed, onMounted } = Vue;
 
-        const Extractor = {
-            patterns: {
-                // Phone regex using your capture groups
-                phone: /(?i:tel)\s*[:.]?\s*(?:(?:\+|00)420[\s\/]*)?(\d{3})\s*(\d{3})\s*(\d{3})/,
-                // Address regex for Czech format
-                address: /[\w\s\.]{3,}\s\d{1,5}(?:\/\d{1,5})?,\s\d{3}\s\d{2}\s+[\w\s]{2,15}/,
-                // Price regex specifically for "CELKEM" line on receipts
-                price: /(?:CELKEM|SUMA)\s*(?:KC)?\s*([\d\s]+,[\d]{2})/i
-            },
+       const Extractor = {
             extract(text) {
-                // Normalize text to single spaces to help regex consistency
-                const clean = text.replace(/\s+/g, ' ');
-                const phMatch = text.match(this.patterns.phone);
-                const adMatch = text.match(this.patterns.address);
-                const prMatch = text.match(this.patterns.price);
+                // Fix: Replace newlines with spaces so regex sees one continuous string
+                const flattenedText = text.replace(/\n/g, ' ').replace(/\s+/g, ' ');
+                
+                const phMatch = flattenedText.match(/(?i:tel)\s*[:.]?\s*(?:(?:\+|00)420[\s\/]*)?(\d{3})\s*(\d{3})\s*(\d{3})/);
+                const adMatch = flattenedText.match(/[\w\s\.]{3,}\s\d{1,5}(?:\/\d{1,5})?,\s\d{3}\s\d{2}\s+[\w\s]{2,15}/);
+                const prMatch = flattenedText.match(/(?:CELKEM|SUMA)\s*(?:KC)?\s*([\d\s]+,[\d]{2})/i);
                 
                 return {
                     phone: phMatch ? `${phMatch[1]}${phMatch[2]}${phMatch[3]}` : '',
