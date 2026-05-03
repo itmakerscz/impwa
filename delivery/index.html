@@ -3,46 +3,52 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Regex Scanner Pro</title>
+    <title>Scanner: Kontakty a Účtenky</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
-        :root { --accent: #e67e22; --bg: #f4f4f9; }
-        body { font-family: system-ui, sans-serif; background: var(--bg); margin: 0; padding: 10px; }
+        :root { --accent: #e67e22; --success: #27ae60; --bg: #f4f4f9; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); margin: 0; padding: 10px; }
         #app { max-width: 480px; margin: 0 auto; }
         .card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 10px; }
-        input { width: 100%; padding: 12px; margin: 5px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
-        .btn { border: none; padding: 14px; border-radius: 8px; font-weight: bold; width: 100%; cursor: pointer; }
+        input { width: 100%; padding: 12px; margin: 5px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        .btn { border: none; padding: 14px; border-radius: 8px; font-weight: bold; width: 100%; cursor: pointer; font-size: 1rem; }
         .btn-scan { background: var(--accent); color: white; }
-        .btn-save { background: #27ae60; color: white; margin-top: 10px; }
-        .item { border-left: 4px solid var(--accent); margin-bottom: 8px; font-size: 0.9rem; }
+        .btn-save { background: var(--success); color: white; margin-top: 10px; }
         .loading { color: var(--accent); text-align: center; font-weight: bold; padding: 10px; }
-        .action-row { display: flex; gap: 8px; margin-top: 10px; }
-        .action-row a { flex: 1; text-align: center; background: #eee; padding: 8px; border-radius: 6px; text-decoration: none; color: #333; font-weight: bold; }
+        .item { border-left: 5px solid var(--accent); }
+        .price-tag { color: var(--success); font-weight: bold; font-size: 1.1rem; }
+        .action-row { display: flex; gap: 8px; margin-top: 12px; }
+        .action-row a { flex: 1; text-align: center; background: #eee; padding: 10px; border-radius: 6px; text-decoration: none; color: #333; font-weight: bold; font-size: 0.9rem; }
     </style>
 </head>
 <body>
     <div id="app">
         <div class="card">
-            <div v-if="loading" class="loading">⏳ Analyzuji text...</div>
+            <div v-if="loading" class="loading">⏳ Čtu data z účtenky...</div>
             <input type="file" accept="image/*" capture="environment" @change="onFileSelect" id="cam" hidden>
-            <button class="btn btn-scan" @click="triggerCam" :disabled="loading">Naskenovat telefon a adresu</button>
+            <button class="btn btn-scan" @click="triggerCam" :disabled="loading">📷 Naskenovat účtenku</button>
             
             <div style="margin-top: 10px;">
                 <input v-model="form.phone" placeholder="Telefon">
                 <input v-model="form.address" placeholder="Adresa">
-                <button class="btn btn-save" @click="addItem">Uložit do historie</button>
+                <input v-model="form.price" placeholder="Cena (CELKEM)">
+                <button class="btn btn-save" @click="addItem" :disabled="!form.phone && !form.address && !form.price">Uložit záznam</button>
             </div>
         </div>
 
-        <input v-model="filter" placeholder="🔍 Hledat v uložených..." style="border: 2px solid var(--accent); margin-bottom: 10px;">
+        <input v-model="filter" placeholder="🔍 Vyhledat v historii..." style="border: 2px solid var(--accent); margin-bottom: 15px;">
 
         <div v-for="item in filteredList" :key="item.id" class="card item">
-            <div style="display: flex; justify-content: space-between;">
-                <strong>📍 {{ item.address || 'Adresa nenalezena' }}</strong>
-                <button @click="removeItem(item.id)" style="border:none; background:none; color:red;">Smazat</button>
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div>
+                    <strong v-if="item.address">📍 {{ item.address }}</strong>
+                    <div v-if="item.phone">📞 {{ item.phone }}</div>
+                </div>
+                <button @click="removeItem(item.id)" style="border:none; background:none; color:red; cursor:pointer;">❌</button>
             </div>
-            <div>📞 {{ item.phone || 'Telefon nenalezen' }}</div>
+            <div v-if="item.price" class="price-tag">{{ item.price }}</div>
+            
             <div class="action-row">
                 <a v-if="item.phone" :href="'tel:' + item.phone">Zavolat</a>
                 <a v-if="item.address" :href="wazeLink(item.address)" target="_blank">Waze</a>
@@ -53,21 +59,26 @@
     <script>
         const { createApp, ref, computed, onMounted } = Vue;
 
-        // --- REGEX SERVICE ---
         const Extractor = {
-            // Your exact patterns
             patterns: {
+                // Phone regex using your capture groups
                 phone: /(?i:tel)\s*[:.]?\s*(?:(?:\+|00)420[\s\/]*)?(\d{3})\s*(\d{3})\s*(\d{3})/,
-                address: /[\w\s\.]{3,}\s\d{1,5}(?:\/\d{1,5})?,\s\d{3}\s\d{2}\s+[\w\s]{2,15}/
+                // Address regex for Czech format
+                address: /[\w\s\.]{3,}\s\d{1,5}(?:\/\d{1,5})?,\s\d{3}\s\d{2}\s+[\w\s]{2,15}/,
+                // Price regex specifically for "CELKEM" line on receipts
+                price: /(?:CELKEM|SUMA)\s*(?:KC)?\s*([\d\s]+,[\d]{2})/i
             },
             extract(text) {
+                // Normalize text to single spaces to help regex consistency
+                const clean = text.replace(/\s+/g, ' ');
                 const phMatch = text.match(this.patterns.phone);
                 const adMatch = text.match(this.patterns.address);
+                const prMatch = text.match(this.patterns.price);
                 
                 return {
-                    // Joins the 3 capture groups from your phone regex
                     phone: phMatch ? `${phMatch[1]}${phMatch[2]}${phMatch[3]}` : '',
-                    address: adMatch ? adMatch[0].trim() : ''
+                    address: adMatch ? adMatch[0].trim() : '',
+                    price: prMatch ? prMatch[1].trim() + ' Kč' : ''
                 };
             }
         };
@@ -77,10 +88,10 @@
                 const loading = ref(false);
                 const filter = ref('');
                 const items = ref([]);
-                const form = ref({ phone: '', address: '' });
+                const form = ref({ phone: '', address: '', price: '' });
 
                 onMounted(() => {
-                    const saved = localStorage.getItem('regex_pwa_v6');
+                    const saved = localStorage.getItem('receipt_data_v7');
                     if (saved) items.value = JSON.parse(saved);
                 });
 
@@ -91,6 +102,7 @@
                     if (!file) return;
                     
                     loading.value = true;
+                    // Memory safety: fresh worker per scan
                     const worker = await Tesseract.createWorker('ces');
                     
                     try {
@@ -99,8 +111,9 @@
                         
                         form.value.phone = result.phone;
                         form.value.address = result.address;
+                        form.value.price = result.price;
                     } catch (err) {
-                        alert("OCR selhalo.");
+                        alert("Chyba při čtení účtenky.");
                     } finally {
                         await worker.terminate();
                         loading.value = false;
@@ -109,16 +122,17 @@
                 };
 
                 const addItem = () => {
-                    if (!form.value.phone && !form.value.address) return;
                     items.value.unshift({ ...form.value, id: Date.now() });
-                    localStorage.setItem('regex_pwa_v6', JSON.stringify(items.value));
-                    form.value = { phone: '', address: '' };
+                    localStorage.setItem('receipt_data_v7', JSON.stringify(items.value));
+                    form.value = { phone: '', address: '', price: '' };
                 };
 
                 const filteredList = computed(() => {
                     const q = filter.value.toLowerCase();
                     return items.value.filter(i => 
-                        i.phone.includes(q) || i.address.toLowerCase().includes(q)
+                        (i.phone && i.phone.includes(q)) || 
+                        (i.address && i.address.toLowerCase().includes(q)) ||
+                        (i.price && i.price.includes(q))
                     );
                 });
 
@@ -126,7 +140,7 @@
                     loading, form, filter, filteredList, triggerCam, onFileSelect, addItem,
                     removeItem: (id) => {
                         items.value = items.value.filter(i => i.id !== id);
-                        localStorage.setItem('regex_pwa_v6', JSON.stringify(items.value));
+                        localStorage.setItem('receipt_data_v7', JSON.stringify(items.value));
                     },
                     wazeLink: (addr) => `https://waze.com/ul?q=${encodeURIComponent(addr)}&navigate=yes`,
                 };
