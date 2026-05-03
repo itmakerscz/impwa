@@ -3,62 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Recepty & Navigace</title>
+    <title>Recepty Scout Pro</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         :root { --primary: #e67e22; --secondary: #27ae60; --bg: #f8f9fa; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); margin: 0; padding: 15px; }
+        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); margin: 0; padding: 15px; }
         #app { max-width: 500px; margin: 0 auto; }
         .card { background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 15px; }
-        h2 { margin-top: 0; color: #333; font-size: 1.4rem; }
-        
         input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
-        .search-bar { background: #fff; border: 2px solid var(--primary); sticky: top; z-index: 10; margin-bottom: 20px; }
-        
+        .search-bar { border: 2px solid var(--primary); sticky: top; top: 10px; z-index: 10; margin-bottom: 20px; background: white; }
         .btn { border: none; padding: 14px; border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1rem; transition: 0.2s; }
         .btn-scan { background: var(--primary); color: white; margin-bottom: 10px; }
         .btn-save { background: var(--secondary); color: white; }
-        .btn:active { opacity: 0.8; transform: scale(0.98); }
-
-        .recipe-list { margin-top: 20px; }
-        .item { position: relative; border-left: 5px solid var(--primary); padding-left: 15px; }
-        .item-header { display: flex; justify-content: space-between; align-items: center; }
-        .btn-del { background: #ff7675; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
-        
+        .price-tag { color: var(--secondary); font-weight: bold; font-size: 1.1rem; }
+        .item { border-left: 5px solid var(--primary); }
         .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
         .actions a { text-align: center; padding: 10px; background: #f1f2f6; border-radius: 8px; text-decoration: none; color: #2f3542; font-weight: 600; font-size: 0.9rem; }
-        .loading-overlay { font-style: italic; color: var(--primary); margin-bottom: 10px; text-align: center; }
+        .loading-overlay { font-style: italic; color: var(--primary); margin-bottom: 10px; text-align: center; font-weight: bold; }
     </style>
 </head>
 <body>
     <div id="app">
         <div class="card">
             <h2>📷 Nový záznam</h2>
-            <div v-if="loading" class="loading-overlay">Zpracovávám češtinu (OCR)...</div>
+            <div v-if="loading" class="loading-overlay">⏳ Čtení textu (šetrné k paměti)...</div>
             
             <input type="file" accept="image/*" capture="environment" @change="processImage" id="cam" hidden>
-            <button class="btn btn-scan" @click="openCam" :disabled="loading">Naskenovat Recept</button>
+            <button class="btn btn-scan" @click="openCam" :disabled="loading">Naskenovat</button>
             
-            <input v-model="form.name" placeholder="Název (např. Restaurace u Lva)">
+            <input v-model="form.name" placeholder="Název">
+            <input v-model="form.price" placeholder="Cena (např. 150 Kč)">
             <input v-model="form.phone" placeholder="Telefon">
             <input v-model="form.address" placeholder="Adresa">
-            <button class="btn btn-save" @click="saveData">Uložit do seznamu</button>
+            <button class="btn btn-save" @click="saveData">Uložit</button>
         </div>
 
         <div class="recipe-list">
-            <h2>📋 Moje uložené záznamy</h2>
-            <input v-model="searchQuery" class="search-bar" placeholder="🔍 Hledat v seznamu...">
+            <input v-model="searchQuery" class="search-bar" placeholder="🔍 Hledat jméno, cenu nebo adresu...">
             
-            <div v-if="filteredItems.length === 0" style="text-align:center; color: #888;">
-                Žádné záznamy nebyly nalezeny.
-            </div>
-
-            <div v-for="(item, index) in filteredItems" :key="item.id" class="card item">
-                <div class="item-header">
-                    <strong>{{ item.name || 'Bez názvu' }}</strong>
-                    <button class="btn-del" @click="deleteItem(item.id)">Smazat</button>
+            <div v-for="item in filteredItems" :key="item.id" class="card item">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <strong>{{ item.name || 'Bez názvu' }}</strong><br>
+                        <span class="price-tag" v-if="item.price">{{ item.price }}</span>
+                    </div>
+                    <button style="background:none; border:none; color:red; cursor:pointer" @click="deleteItem(item.id)">❌</button>
                 </div>
                 <div style="font-size: 0.9rem; color: #666; margin-top: 5px;">
                     <div v-if="item.phone">📞 {{ item.phone }}</div>
@@ -66,7 +57,7 @@
                 </div>
                 <div class="actions">
                     <a v-if="item.phone" :href="'tel:' + item.phone">Zavolat</a>
-                    <a v-if="item.address" :href="getWaze(item.address)" target="_blank">Waze navigace</a>
+                    <a v-if="item.address" :href="getWaze(item.address)" target="_blank">Waze</a>
                 </div>
             </div>
         </div>
@@ -80,10 +71,10 @@
                 const loading = ref(false);
                 const searchQuery = ref('');
                 const savedItems = ref([]);
-                const form = ref({ name: '', phone: '', address: '' });
+                const form = ref({ name: '', phone: '', address: '', price: '' });
 
                 onMounted(() => {
-                    const data = localStorage.getItem('cz_recipes');
+                    const data = localStorage.getItem('cz_data_v3');
                     if (data) savedItems.value = JSON.parse(data);
                 });
 
@@ -94,57 +85,57 @@
                     if (!file) return;
                     loading.value = true;
                     
+                    // MEMORY FIX: Create and terminate worker for each session
+                    const worker = await Tesseract.createWorker('ces');
+                    
                     try {
-                        // Using 'ces' for Czech OCR
-                        const { data: { text } } = await Tesseract.recognize(file, 'ces');
+                        const { data: { text } } = await worker.recognize(file);
                         
-                        // Czech Phone Regex: Handles +420, spaces, and 9 digits
-                        const phoneMatch = text.match(/(?:\+?420)? ?\d{3} ?\d{3} ?\d{3}/);
-                        // Czech Address Regex: Handles Street Name + House Number (e.g., Lipová 123/4)
-                        const addrMatch = text.match(/[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][a-záčďéěíňóřšťúůýž]+ ?[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽa-záčďéěíňóřšťúůýž]* \d+(\/\d+)?/);
+                        // Price Regex: Matches "150 Kč", "150,-", "150.00"
+                        const pMatch = text.match(/\d+[\s,.-]*Kč|\d+[.,-]{1,2}(?=\s|$)/i);
+                        // Phone Regex
+                        const phMatch = text.match(/(?:\+?420)? ?\d{3} ?\d{3} ?\d{3}/);
+                        // Address Regex
+                        const adMatch = text.match(/[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][a-záčďéěíňóřšťúůýž]+ \d+(\/\d+)?/);
 
-                        if (phoneMatch) form.value.phone = phoneMatch[0].replace(/\s/g, '');
-                        if (addrMatch) form.value.address = addrMatch[0];
+                        if (pMatch) form.value.price = pMatch[0].trim();
+                        if (phMatch) form.value.phone = phMatch[0].replace(/\s/g, '');
+                        if (adMatch) form.value.address = adMatch[0];
+                        if (!form.value.name) form.value.name = text.split('\n')[0].substring(0, 25);
                         
                     } catch (e) {
-                        alert("Chyba při skenování.");
+                        alert("Chyba OCR");
                     } finally {
+                        await worker.terminate(); // CRITICAL: Free memory
                         loading.value = false;
                     }
                 };
 
                 const saveData = () => {
-                    if (!form.value.name && !form.value.phone) return;
-                    
-                    const newItem = {
-                        ...form.value,
-                        id: Date.now() // Unique ID for better filtering/deleting
-                    };
-                    
-                    savedItems.value.unshift(newItem);
-                    localStorage.setItem('cz_recipes', JSON.stringify(savedItems.value));
-                    form.value = { name: '', phone: '', address: '' };
+                    if (!form.value.name) return alert("Zadejte název");
+                    savedItems.value.unshift({ ...form.value, id: Date.now() });
+                    localStorage.setItem('cz_data_v3', JSON.stringify(savedItems.value));
+                    form.value = { name: '', phone: '', address: '', price: '' };
                 };
 
                 const deleteItem = (id) => {
-                    savedItems.value = savedItems.value.filter(item => item.id !== id);
-                    localStorage.setItem('cz_recipes', JSON.stringify(savedItems.value));
+                    savedItems.value = savedItems.value.filter(i => i.id !== id);
+                    localStorage.setItem('cz_data_v3', JSON.stringify(savedItems.value));
                 };
 
                 const filteredItems = computed(() => {
-                    const query = searchQuery.value.toLowerCase();
-                    return savedItems.value.filter(item => 
-                        item.name.toLowerCase().includes(query) || 
-                        (item.address && item.address.toLowerCase().includes(query)) ||
-                        (item.phone && item.phone.includes(query))
+                    const q = searchQuery.value.toLowerCase();
+                    return savedItems.value.filter(i => 
+                        i.name.toLowerCase().includes(q) || 
+                        (i.price && i.price.toLowerCase().includes(q)) ||
+                        (i.address && i.address.toLowerCase().includes(q))
                     );
                 });
 
-                const getWaze = (addr) => `https://waze.com/ul?q=${encodeURIComponent(addr)}&navigate=yes`;
-
                 return { 
                     loading, form, searchQuery, filteredItems, 
-                    openCam, processImage, saveData, deleteItem, getWaze 
+                    openCam, processImage, saveData, deleteItem, 
+                    getWaze: (a) => `https://waze.com/ul?q=${encodeURIComponent(a)}&navigate=yes` 
                 };
             }
         }).mount('#app');
