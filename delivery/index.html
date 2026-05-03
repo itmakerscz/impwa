@@ -3,49 +3,65 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner Kontakty</title>
+    <title>PWA Scanner</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
-        :root { --accent: #e67e22; --success: #27ae60; --bg: #f4f4f9; }
-        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); padding: 15px; margin: 0; }
+        :root { --p: #e67e22; --s: #27ae60; --bg: #f4f4f9; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); margin: 0; padding: 15px; }
         #app { max-width: 450px; margin: 0 auto; }
-        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 15px; }
+        
+        /* UI Components */
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 15px; }
         input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        
+        /* Buttons */
         .btn { border: none; padding: 15px; border-radius: 8px; font-weight: bold; width: 100%; cursor: pointer; font-size: 1rem; }
-        .btn-scan { background: var(--accent); color: white; margin-bottom: 10px; }
-        .btn-save { background: var(--success); color: white; }
-        .loading { text-align: center; color: var(--accent); font-weight: bold; padding: 10px; }
-        .item { border-left: 5px solid var(--accent); padding: 15px; margin-bottom: 10px; }
+        .btn-scan { background: var(--p); color: white; margin-bottom: 10px; }
+        .btn-save { background: var(--s); color: white; }
+        .btn:disabled { background: #ccc; cursor: not-allowed; }
+
+        /* List Items */
+        .item { border-left: 5px solid var(--p); padding: 15px; margin-bottom: 10px; }
         .actions { display: flex; gap: 10px; margin-top: 12px; }
-        .actions a { flex: 1; text-align: center; background: #eee; padding: 10px; border-radius: 6px; text-decoration: none; color: #333; font-weight: 600; }
+        .actions a { flex: 1; text-align: center; background: #eee; padding: 10px; border-radius: 6px; text-decoration: none; color: #333; font-weight: 600; font-size: 0.9rem; }
+        
+        .status { text-align: center; font-weight: bold; color: var(--p); padding: 10px; font-size: 0.9rem; }
     </style>
 </head>
 <body>
     <div id="app">
+        <!-- Input Section -->
         <div class="card">
-            <h2>📷 Skenovat údaje</h2>
-            <div v-if="loading" class="loading">⏳ Zpracovávám (Low-RAM mód)...</div>
+            <h2>📷 Nový Sken</h2>
+            <div v-if="loading" class="status">⏳ Zpracovávám text...</div>
             
-            <input type="file" accept="image/*" capture="environment" @change="processImage" id="cam" hidden>
-            <button class="btn btn-scan" @click="openCam" :disabled="loading">Naskenovat telefon a adresu</button>
+            <input type="file" accept="image/*" capture="environment" @change="handleFile" id="cam" hidden>
+            <button class="btn btn-scan" @click="openCam" :disabled="loading">
+                {{ loading ? 'Skenuji...' : 'Naskenovat telefon a adresu' }}
+            </button>
             
-            <input v-model="form.phone" placeholder="Telefon">
-            <input v-model="form.address" placeholder="Adresa">
-            <button class="btn btn-save" @click="saveData">Uložit do seznamu</button>
+            <input v-model="form.phone" placeholder="Telefon (např. 777 123 456)">
+            <input v-model="form.address" placeholder="Adresa (např. Ulice 1, 123 45 Město)">
+            <button class="btn btn-save" @click="saveData" :disabled="!form.phone && !form.address">Uložit</button>
         </div>
 
-        <input v-model="search" placeholder="🔍 Hledat..." style="margin-bottom: 15px; border: 2px solid var(--accent);">
-
-        <div v-for="item in filteredItems" :key="item.id" class="card item">
-            <div style="display:flex; justify-content: space-between;">
-                <strong>📍 {{ item.address || 'Neznámá adresa' }}</strong>
-                <button @click="deleteItem(item.id)" style="border:none; background:none; color:red; cursor:pointer;">Smazat</button>
-            </div>
-            <div style="margin-top:5px;">📞 {{ item.phone || 'Bez telefonu' }}</div>
-            <div class="actions">
-                <a v-if="item.phone" :href="'tel:' + item.phone">Zavolat</a>
-                <a v-if="item.address" :href="getWaze(item.address)" target="_blank">Waze navigace</a>
+        <!-- Search & List Section -->
+        <div class="recipe-list">
+            <input v-model="search" placeholder="🔍 Vyhledat v historii..." style="border: 2px solid var(--p);">
+            
+            <div v-for="item in filteredItems" :key="item.id" class="card item">
+                <div style="display:flex; justify-content: space-between; align-items: start;">
+                    <div style="max-width: 80%;">
+                        <strong>📍 {{ item.address || 'Neznámá adresa' }}</strong><br>
+                        <span>📞 {{ item.phone || 'Bez telefonu' }}</span>
+                    </div>
+                    <button @click="remove(item.id)" style="border:none; background:none; color:#e74c3c; font-weight:bold;">Smazat</button>
+                </div>
+                <div class="actions">
+                    <a v-if="item.phone" :href="'tel:' + item.phone">Zavolat</a>
+                    <a v-if="item.address" :href="getWaze(item.address)" target="_blank">Waze</a>
+                </div>
             </div>
         </div>
     </div>
@@ -60,50 +76,49 @@
                 const savedItems = ref([]);
                 const form = ref({ phone: '', address: '' });
 
+                // Persistence
                 onMounted(() => {
-                    const data = localStorage.getItem('cz_final_v4');
+                    const data = localStorage.getItem('pwa_contacts_v5');
                     if (data) savedItems.value = JSON.parse(data);
                 });
 
-                const processImage = async (event) => {
+                const openCam = () => document.getElementById('cam').click();
+
+                const handleFile = async (event) => {
                     const file = event.target.files[0];
                     if (!file) return;
                     loading.value = true;
-                    
+
+                    // Memory Fix: Fresh worker for every scan
                     const worker = await Tesseract.createWorker('ces');
                     
                     try {
                         const { data: { text } } = await worker.recognize(file);
                         
-                        // PHONE: Your provided pattern with groups
+                        // 1. Phone Regex (User Pattern)
                         const phRE = /(?i:tel)\s*[:.]?\s*(?:(?:\+|00)420[\s\/]*)?(\d{3})\s*(\d{3})\s*(\d{3})/;
-                        const phMatch = text.match(phRE);
+                        const phM = text.match(phRE);
                         
-                        // ADDRESS: Your previous robust pattern
+                        // 2. Address Regex (User Pattern)
                         const adRE = /[\w\s\.]{3,}\s\d{1,5}(?:\/\d{1,5})?,\s\d{3}\s\d{2}\s+[\w\s]{2,15}/;
-                        const adMatch = text.match(adRE);
+                        const adM = text.match(adRE);
 
-                        // If phone matched, we extract the three captured groups
-                        if (phMatch) {
-                            form.value.phone = `${phMatch[1]}${phMatch[2]}${phMatch[3]}`;
-                        }
-                        if (adMatch) {
-                            form.value.address = adMatch[0].trim();
-                        }
-                        
-                    } catch (e) {
-                        alert("Chyba při čtení.");
+                        if (phM) form.value.phone = `${phM[1]}${phM[2]}${phM[3]}`;
+                        if (adM) form.value.address = adM[0].trim();
+
+                    } catch (err) {
+                        console.error(err);
+                        alert("Chyba OCR. Zkuste prosím znovu.");
                     } finally {
-                        await worker.terminate(); 
+                        await worker.terminate(); // CRITICAL: Free RAM
                         loading.value = false;
-                        event.target.value = '';
+                        event.target.value = ''; // Reset file input
                     }
                 };
 
                 const saveData = () => {
-                    if (!form.value.phone && !form.value.address) return;
                     savedItems.value.unshift({ ...form.value, id: Date.now() });
-                    localStorage.setItem('cz_final_v4', JSON.stringify(savedItems.value));
+                    localStorage.setItem('pwa_contacts_v5', JSON.stringify(savedItems.value));
                     form.value = { phone: '', address: '' };
                 };
 
@@ -116,11 +131,11 @@
                 });
 
                 return { 
-                    loading, form, search, filteredItems, processImage, saveData, 
-                    openCam: () => document.getElementById('cam').click(),
-                    deleteItem: (id) => {
+                    loading, form, search, filteredItems, handleFile, saveData, 
+                    openCam, 
+                    remove: (id) => {
                         savedItems.value = savedItems.value.filter(i => i.id !== id);
-                        localStorage.setItem('cz_final_v4', JSON.stringify(savedItems.value));
+                        localStorage.setItem('pwa_contacts_v5', JSON.stringify(savedItems.value));
                     },
                     getWaze: (a) => `https://waze.com/ul?q=${encodeURIComponent(a)}&navigate=yes`
                 };
