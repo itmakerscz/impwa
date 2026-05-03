@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner: Line-by-Line Mode</title>
+    <title>Scanner: Modular Mode</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
@@ -42,109 +42,7 @@
         </div>
     </div>
 
-    <script>
-        const { createApp, ref, onMounted } = Vue;
-
-        const Extractor = {
-            patterns: {
-                phone: /(?:tel|telefon)\s*[:.]?\s*(?:(?:\+|00)420[\s\/]*)?(\d{3})\s*(\d{3})\s*(\d{3})/i,
-                address: /[\w\s\.]{3,}\s\d{1,5}(?:\/\d{1,5})?,\s\d{3}\s\d{2}\s+[\w\s]{2,15}/,
-                price: /(?:CELKEM|SUMA)\s*(?:KC)?\s*([\d\s]+,[\d]{2})/i
-            },
-            extract(text) {
-                // Split the raw text into an array of lines
-                const lines = text.split('\n');
-                
-                let extracted = {
-                    phone: '',
-                    address: '',
-                    price: ''
-                };
-
-                console.log("--- LINE BY LINE ANALYSIS ---");
-
-                lines.forEach((line, index) => {
-                    const trimmedLine = line.trim();
-                    if (!trimmedLine) return;
-
-                    console.log(`Line ${index}: "${trimmedLine}"`);
-
-                    // Try matching phone if not already found
-                    if (!extracted.phone) {
-                        const phMatch = trimmedLine.match(this.patterns.phone);
-                        if (phMatch) {
-                            extracted.phone = `${phMatch[1]}${phMatch[2]}${phMatch[3]}`;
-                        }
-                    }
-
-                    // Try matching address if not already found
-                    if (!extracted.address) {
-                        const adMatch = trimmedLine.match(this.patterns.address);
-                        if (adMatch) {
-                            extracted.address = adMatch[0].trim();
-                        }
-                    }
-
-                    // Try matching price if not already found
-                    if (!extracted.price) {
-                        const prMatch = trimmedLine.match(this.patterns.price);
-                        if (prMatch) {
-                            extracted.price = prMatch[1].trim() + ' Kč';
-                        }
-                    }
-                });
-
-                console.log("--- FINAL DATA ---", extracted);
-                return extracted;
-            }
-        };
-
-        createApp({
-            setup() {
-                const loading = ref(false);
-                const items = ref([]);
-                const form = ref({ phone: '', address: '', price: '' });
-
-                onMounted(() => {
-                    const saved = localStorage.getItem('receipt_line_v9');
-                    if (saved) items.value = JSON.parse(saved);
-                });
-
-                const triggerCam = () => document.getElementById('cam').click();
-
-                const onFileSelect = async (e) => {
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    
-                    loading.value = true;
-                    const worker = await Tesseract.createWorker('ces');
-                    
-                    try {
-                        const { data: { text } } = await worker.recognize(file);
-                        const result = Extractor.extract(text);
-                        
-                        form.value.phone = result.phone;
-                        form.value.address = result.address;
-                        form.value.price = result.price;
-                    } catch (err) {
-                        console.error("OCR Error:", err);
-                        alert("Chyba při čtení.");
-                    } finally {
-                        await worker.terminate();
-                        loading.value = false;
-                        e.target.value = ''; 
-                    }
-                };
-
-                const addItem = () => {
-                    items.value.unshift({ ...form.value, id: Date.now() });
-                    localStorage.setItem('receipt_line_v9', JSON.stringify(items.value));
-                    form.value = { phone: '', address: '', price: '' };
-                };
-
-                return { loading, form, items, triggerCam, onFileSelect, addItem };
-            }
-        }).mount('#app');
-    </script>
+    <!-- Main App Script Entry Point -->
+    <script type="module" src="app.js"></script>
 </body>
 </html>
