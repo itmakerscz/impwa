@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner: Debug Mode</title>
+    <title>Scanner: Line-by-Line Mode</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
@@ -23,7 +23,7 @@
 <body>
     <div id="app">
         <div class="card">
-            <div v-if="loading" class="loading">⏳ Čtu data (podívejte se do konzole)...</div>
+            <div v-if="loading" class="loading">⏳ Analyzuji řádky...</div>
             <input type="file" accept="image/*" capture="environment" @change="onFileSelect" id="cam" hidden>
             <button class="btn btn-scan" @click="triggerCam" :disabled="loading">📷 Naskenovat účtenku</button>
             
@@ -47,33 +47,55 @@
 
         const Extractor = {
             patterns: {
-                phone: /(?i:tel)\s*[:.]?\s*(?:(?:\+|00)420[\s\/]*)?(\d{3})\s*(\d{3})\s*(\d{3})/,
+                phone: /(?:tel|telefon)\s*[:.]?\s*(?:(?:\+|00)420[\s\/]*)?(\d{3})\s*(\d{3})\s*(\d{3})/i,
                 address: /[\w\s\.]{3,}\s\d{1,5}(?:\/\d{1,5})?,\s\d{3}\s\d{2}\s+[\w\s]{2,15}/,
                 price: /(?:CELKEM|SUMA)\s*(?:KC)?\s*([\d\s]+,[\d]{2})/i
             },
             extract(text) {
-                // Flattening text to help address regex cross line breaks
-                // const clean = text.replace(/\n/g, ' ').replace(/\s+/g, ' ');
+                // Split the raw text into an array of lines
+                const lines = text.split('\n');
                 
-                const phMatch = text.match(this.patterns.phone);
-                const adMatch = text.match(this.patterns.address);
-                const prMatch = text.match(this.patterns.price);
-                
-                const data = {
-                    phone: phMatch ? `${phMatch[1]}${phMatch[2]}${phMatch[3]}` : '',
-                    address: adMatch ? adMatch[0].trim() : '',
-                    price: prMatch ? prMatch[1].trim() + ' Kč' : ''
+                let extracted = {
+                    phone: '',
+                    address: '',
+                    price: ''
                 };
 
-                // DEBUG LOGS
-                console.log("--- RAW OCR TEXT ---");
-                console.log(text); 
-                //console.log("--- CLEANED TEXT FOR REGEX ---");
-                //console.log(clean);
-                console.log("--- EXTRACTED DATA ---");
-                console.log(data);
+                console.log("--- LINE BY LINE ANALYSIS ---");
 
-                return data;
+                lines.forEach((line, index) => {
+                    const trimmedLine = line.trim();
+                    if (!trimmedLine) return;
+
+                    console.log(`Line ${index}: "${trimmedLine}"`);
+
+                    // Try matching phone if not already found
+                    if (!extracted.phone) {
+                        const phMatch = trimmedLine.match(this.patterns.phone);
+                        if (phMatch) {
+                            extracted.phone = `${phMatch[1]}${phMatch[2]}${phMatch[3]}`;
+                        }
+                    }
+
+                    // Try matching address if not already found
+                    if (!extracted.address) {
+                        const adMatch = trimmedLine.match(this.patterns.address);
+                        if (adMatch) {
+                            extracted.address = adMatch[0].trim();
+                        }
+                    }
+
+                    // Try matching price if not already found
+                    if (!extracted.price) {
+                        const prMatch = trimmedLine.match(this.patterns.price);
+                        if (prMatch) {
+                            extracted.price = prMatch[1].trim() + ' Kč';
+                        }
+                    }
+                });
+
+                console.log("--- FINAL DATA ---", extracted);
+                return extracted;
             }
         };
 
@@ -84,7 +106,7 @@
                 const form = ref({ phone: '', address: '', price: '' });
 
                 onMounted(() => {
-                    const saved = localStorage.getItem('receipt_debug_v8');
+                    const saved = localStorage.getItem('receipt_line_v9');
                     if (saved) items.value = JSON.parse(saved);
                 });
 
@@ -116,7 +138,7 @@
 
                 const addItem = () => {
                     items.value.unshift({ ...form.value, id: Date.now() });
-                    localStorage.setItem('receipt_debug_v8', JSON.stringify(items.value));
+                    localStorage.setItem('receipt_line_v9', JSON.stringify(items.value));
                     form.value = { phone: '', address: '', price: '' };
                 };
 
