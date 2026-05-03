@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner: Kontakty a Účtenky</title>
+    <title>Scanner: Debug Mode</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
@@ -16,75 +16,75 @@
         .btn-scan { background: var(--accent); color: white; }
         .btn-save { background: var(--success); color: white; margin-top: 10px; }
         .loading { color: var(--accent); text-align: center; font-weight: bold; padding: 10px; }
-        .item { border-left: 5px solid var(--accent); }
-        .price-tag { color: var(--success); font-weight: bold; font-size: 1.1rem; }
-        .action-row { display: flex; gap: 8px; margin-top: 12px; }
-        .action-row a { flex: 1; text-align: center; background: #eee; padding: 10px; border-radius: 6px; text-decoration: none; color: #333; font-weight: bold; font-size: 0.9rem; }
+        .item { border-left: 5px solid var(--accent); padding: 10px; margin-bottom: 10px; }
+        .price-tag { color: var(--success); font-weight: bold; }
     </style>
 </head>
 <body>
     <div id="app">
         <div class="card">
-            <div v-if="loading" class="loading">⏳ Čtu data z účtenky...</div>
+            <div v-if="loading" class="loading">⏳ Čtu data (podívejte se do konzole)...</div>
             <input type="file" accept="image/*" capture="environment" @change="onFileSelect" id="cam" hidden>
             <button class="btn btn-scan" @click="triggerCam" :disabled="loading">📷 Naskenovat účtenku</button>
             
             <div style="margin-top: 10px;">
                 <input v-model="form.phone" placeholder="Telefon">
                 <input v-model="form.address" placeholder="Adresa">
-                <input v-model="form.price" placeholder="Cena (CELKEM)">
-                <button class="btn btn-save" @click="addItem" :disabled="!form.phone && !form.address && !form.price">Uložit záznam</button>
+                <input v-model="form.price" placeholder="Cena">
+                <button class="btn btn-save" @click="addItem">Uložit záznam</button>
             </div>
         </div>
 
-        <input v-model="filter" placeholder="🔍 Vyhledat v historii..." style="border: 2px solid var(--accent); margin-bottom: 15px;">
-
-        <div v-for="item in filteredList" :key="item.id" class="card item">
-            <div style="display: flex; justify-content: space-between; align-items: start;">
-                <div>
-                    <strong v-if="item.address">📍 {{ item.address }}</strong>
-                    <div v-if="item.phone">📞 {{ item.phone }}</div>
-                </div>
-                <button @click="removeItem(item.id)" style="border:none; background:none; color:red; cursor:pointer;">❌</button>
-            </div>
-            <div v-if="item.price" class="price-tag">{{ item.price }}</div>
-            
-            <div class="action-row">
-                <a v-if="item.phone" :href="'tel:' + item.phone">Zavolat</a>
-                <a v-if="item.address" :href="wazeLink(item.address)" target="_blank">Waze</a>
-            </div>
+        <div v-for="item in items" :key="item.id" class="card item">
+            <strong>📍 {{ item.address || 'Neznámá adresa' }}</strong><br>
+            <span>📞 {{ item.phone || 'Bez telefonu' }}</span><br>
+            <span class="price-tag">{{ item.price || '0,00 Kč' }}</span>
         </div>
     </div>
 
     <script>
-        const { createApp, ref, computed, onMounted } = Vue;
+        const { createApp, ref, onMounted } = Vue;
 
-       const Extractor = {
+        const Extractor = {
+            patterns: {
+                phone: /(?i:tel)\s*[:.]?\s*(?:(?:\+|00)420[\s\/]*)?(\d{3})\s*(\d{3})\s*(\d{3})/,
+                address: /[\w\s\.]{3,}\s\d{1,5}(?:\/\d{1,5})?,\s\d{3}\s\d{2}\s+[\w\s]{2,15}/,
+                price: /(?:CELKEM|SUMA)\s*(?:KC)?\s*([\d\s]+,[\d]{2})/i
+            },
             extract(text) {
-                // Fix: Replace newlines with spaces so regex sees one continuous string
-                const flattenedText = text.replace(/\n/g, ' ').replace(/\s+/g, ' ');
+                // Flattening text to help address regex cross line breaks
+                const clean = text.replace(/\n/g, ' ').replace(/\s+/g, ' ');
                 
-                const phMatch = flattenedText.match(/(?i:tel)\s*[:.]?\s*(?:(?:\+|00)420[\s\/]*)?(\d{3})\s*(\d{3})\s*(\d{3})/);
-                const adMatch = flattenedText.match(/[\w\s\.]{3,}\s\d{1,5}(?:\/\d{1,5})?,\s\d{3}\s\d{2}\s+[\w\s]{2,15}/);
-                const prMatch = flattenedText.match(/(?:CELKEM|SUMA)\s*(?:KC)?\s*([\d\s]+,[\d]{2})/i);
+                const phMatch = clean.match(this.patterns.phone);
+                const adMatch = clean.match(this.patterns.address);
+                const prMatch = clean.match(this.patterns.price);
                 
-                return {
+                const data = {
                     phone: phMatch ? `${phMatch[1]}${phMatch[2]}${phMatch[3]}` : '',
                     address: adMatch ? adMatch[0].trim() : '',
                     price: prMatch ? prMatch[1].trim() + ' Kč' : ''
                 };
+
+                // DEBUG LOGS
+                console.log("--- RAW OCR TEXT ---");
+                console.log(text); 
+                console.log("--- CLEANED TEXT FOR REGEX ---");
+                console.log(clean);
+                console.log("--- EXTRACTED DATA ---");
+                console.log(data);
+
+                return data;
             }
         };
 
         createApp({
             setup() {
                 const loading = ref(false);
-                const filter = ref('');
                 const items = ref([]);
                 const form = ref({ phone: '', address: '', price: '' });
 
                 onMounted(() => {
-                    const saved = localStorage.getItem('receipt_data_v7');
+                    const saved = localStorage.getItem('receipt_debug_v8');
                     if (saved) items.value = JSON.parse(saved);
                 });
 
@@ -95,7 +95,6 @@
                     if (!file) return;
                     
                     loading.value = true;
-                    // Memory safety: fresh worker per scan
                     const worker = await Tesseract.createWorker('ces');
                     
                     try {
@@ -106,7 +105,8 @@
                         form.value.address = result.address;
                         form.value.price = result.price;
                     } catch (err) {
-                        alert("Chyba při čtení účtenky.");
+                        console.error("OCR Error:", err);
+                        alert("Chyba při čtení.");
                     } finally {
                         await worker.terminate();
                         loading.value = false;
@@ -116,27 +116,11 @@
 
                 const addItem = () => {
                     items.value.unshift({ ...form.value, id: Date.now() });
-                    localStorage.setItem('receipt_data_v7', JSON.stringify(items.value));
+                    localStorage.setItem('receipt_debug_v8', JSON.stringify(items.value));
                     form.value = { phone: '', address: '', price: '' };
                 };
 
-                const filteredList = computed(() => {
-                    const q = filter.value.toLowerCase();
-                    return items.value.filter(i => 
-                        (i.phone && i.phone.includes(q)) || 
-                        (i.address && i.address.toLowerCase().includes(q)) ||
-                        (i.price && i.price.includes(q))
-                    );
-                });
-
-                return { 
-                    loading, form, filter, filteredList, triggerCam, onFileSelect, addItem,
-                    removeItem: (id) => {
-                        items.value = items.value.filter(i => i.id !== id);
-                        localStorage.setItem('receipt_data_v7', JSON.stringify(items.value));
-                    },
-                    wazeLink: (addr) => `https://waze.com/ul?q=${encodeURIComponent(addr)}&navigate=yes`,
-                };
+                return { loading, form, items, triggerCam, onFileSelect, addItem };
             }
         }).mount('#app');
     </script>
