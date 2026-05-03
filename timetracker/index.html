@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#2563eb" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#111827" media="(prefers-color-scheme: dark)">
+    <title>TimeTracker PWA</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+</head>
+<body>
+    <div id="app" class="app-container">
+        <header>
+            <h1>{{ t('appTitle') }}</h1>
+        </header>
+
+        <main>
+            <!-- Dashboard Section -->
+            <section v-if="currentView === 'dashboard'">
+                <div class="card stats-hero">
+                    <div class="label-sm">{{ t('totalHours') }}</div>
+                    <div class="total-hours">{{ stats.total }}</div>
+                    
+                    <div v-if="isClockedIn" class="timer-display">
+                        {{ elapsedTime }}
+                    </div>
+
+                    <div v-if="!isClockedIn" class="field-group">
+                        <label class="label-sm">{{ t('activeProject') }}</label>
+                        <select v-model="project" class="input-full no-appearance">
+                            <option v-for="p in projects" :key="p.name" :value="p.name">{{ p.name }}</option>
+                        </select>
+                    </div>
+
+                    <button @click="toggleClock" 
+                        :class="['btn', isClockedIn ? 'btn-danger' : 'btn-primary']">
+                        {{ isClockedIn ? t('clockOut') : t('clockIn') }}
+                    </button>
+                </div>
+
+                <div class="card card-padded">
+                    <div class="label-sm month-label">{{ t('thisMonth') }}</div>
+                    <div class="month-value">{{ stats.thisMonth }}h</div>
+                </div>
+            </section>
+
+            <!-- History Section -->
+            <section v-if="currentView === 'history'">
+                <div class="logs-list">
+                    <div class="card card-compact">
+                        <input type="text" v-model="historySearch" class="input-full" :placeholder="t('searchHistory')">
+                    </div>
+                    <h2 class="label-sm section-header">{{ t('recentLogs') }}</h2>
+                    <div v-for="log in filteredHistory" :key="log.id" class="log-item">
+                        <div class="log-info">
+                            <span class="log-date">{{ new Date(log.timeIn).toLocaleDateString() }}</span>
+                            <div class="log-details">
+                                <span class="font-mono">{{ log.hours }}h</span>
+                                <span class="project-tag" 
+                                      :style="{ backgroundColor: (projects.find(p => p.name === (log.project || 'General'))?.color || 'var(--accent)') }">
+                                    {{ log.project || 'General' }}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="flex-gap-sm">
+                            <button @click="startEdit(log)" class="action-btn btn-text-secondary">
+                                <span class="material-icons-outlined">edit</span>
+                            </button>
+                            <button @click="deleteLog(log.id)" class="action-btn btn-text-danger">
+                                <span class="material-icons-outlined">delete</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Statistics Section -->
+            <section v-if="currentView === 'statistics'" class="logs-list">
+                <h2 class="section-header label-sm">{{ t('visualAnalytics') }}</h2>
+                
+                <div class="card chart-container">
+                    <div class="chart-header">
+                        <div class="chart-info">
+                            <h2 class="chart-title label-sm">{{ t('activity7Days') }}</h2>
+                            <div class="chart-subtitle">{{ t('total') }}: {{ filteredTotalHours }}h</div>
+                        </div>
+                        <select v-model="chartProjectFilter" class="input-full chart-filter">
+                            <option value="All">{{ t('allProjects') }}</option>
+                            <option v-for="p in projects" :key="p.name" :value="p.name">{{ p.name }}</option>
+                        </select>
+                    </div>
+                    <canvas id="activityChart"></canvas>
+                </div>
+
+                <div v-if="projectSummary.length > 0" class="card chart-container chart-pie">
+                    <h2 class="chart-title label-sm">{{ t('timeDistribution') }}</h2>
+                    <canvas id="reportChart"></canvas>
+                </div>
+            </section>
+
+            <!-- Reports Section -->
+            <section v-if="currentView === 'reports'" class="logs-list">
+                <h2 class="section-header label-sm">{{ t('projectSummary') }}</h2>
+                <div class="card card-compact card-column">
+                    <div class="field-group-compact">
+                        <label class="label-sm field-label">{{ t('from') }}</label>
+                        <input type="date" v-model="reportRange.start" class="input-full">
+                    </div>
+                    <div class="field-group-compact" style="margin-bottom: 0;">
+                        <label class="label-sm field-label">{{ t('to') }}</label>
+                        <input type="date" v-model="reportRange.end" class="input-full">
+                    </div>
+                </div>
+
+                <div class="card card-column card-padded">
+                    <div v-for="item in projectSummary" :key="item.name" class="report-row">
+                        <div class="project-info">
+                            <span :style="{ backgroundColor: projects.find(p => p.name === item.name)?.color || '#2563eb' }" class="color-dot"></span>
+                            <span>{{ item.name }}</span>
+                        </div>
+                        <span class="font-mono">{{ item.hours }}h</span>
+                    </div>
+                    <div v-if="projectSummary.length === 0" class="label-sm" style="text-align: center; padding: 1rem;">{{ t('noLogs') }}</div>
+                </div>
+            </section>
+
+            <!-- Settings Section -->
+            <section v-if="currentView === 'settings'" class="logs-list">
+                <h2 class="section-header label-sm">{{ t('manageProjects') }}</h2>
+                <div v-for="p in projects" :key="p.name" class="log-item">
+                    <div class="log-info">
+                        <span class="log-date">{{ p.name }}</span>
+                        <div class="log-details">
+                            <span class="project-tag" :style="{ backgroundColor: p.color || 'var(--accent)' }">
+                                {{ p.color || 'Default' }}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="flex-gap-sm">
+                        <button @click="openProjectModal(p)" class="action-btn btn-text-secondary" :title="t('pickColor')">
+                            <span class="material-icons-outlined">palette</span>
+                        </button>
+                        <button @click="openProjectModal(p)" class="action-btn btn-text-secondary" :title="t('edit')">
+                            <span class="material-icons-outlined">edit</span>
+                        </button>
+                        <button v-if="p.name !== 'General'" @click="deleteProject(p.name)" class="action-btn btn-text-danger" :title="t('delete')">
+                            <span class="material-icons-outlined">delete</span>
+                        </button>
+                    </div>
+                </div>
+                <div style="padding-inline: 0.25rem; margin-block-end: 1rem;">
+                    <button @click="openProjectModal()" class="utility-btn btn-full-width-center margin-top-sm">
+                        <span class="material-icons-outlined">add</span> {{ t('addProject') }}
+                    </button>
+                </div>
+
+                <h2 class="section-header label-sm">{{ t('preferencesData') }}</h2>
+                <div class="card card-column-lg">
+                    <div class="field-group field-group-no-margin">
+                        <label class="label-sm">{{ t('language') }}</label>
+                        <select v-model="locale" class="input-full no-appearance lang-select">
+                            <option value="en">{{ t('english') }}</option>
+                            <option value="cs">{{ t('czech') }}</option>
+                        </select>
+                    </div>
+                    <button @click="toggleTheme" class="utility-btn btn-full-width-center">
+                        <span class="material-icons-outlined">{{ isDark ? 'light_mode' : 'dark_mode' }}</span>
+                        {{ t('switchTo') }} {{ isDark ? t('lightMode') : t('darkMode') }}
+                    </button>
+                    <button @click="exportCSV" class="utility-btn btn-full-width-center">
+                        <span class="material-icons-outlined">file_download</span>
+                        {{ t('exportCSV') }}
+                    </button>
+                    <label class="utility-btn btn-full-width-center">
+                        <span class="material-icons-outlined">file_upload</span>
+                        {{ t('importCSV') }}
+                        <input type="file" @change="importCSV" class="hidden" accept=".csv">
+                    </label>
+                </div>
+
+                <div class="settings-danger-zone">
+                    <button @click="clearAllData" class="btn btn-outline-danger">
+                        <span class="material-icons-outlined">delete_forever</span>
+                        {{ t('clearAllData') }}
+                    </button>
+                </div>
+            </section>
+        </main>
+
+        <!-- Global Dialog Modal (Alert/Confirm) -->
+        <div v-if="dialog.show" class="modal-overlay dialog-overlay">
+            <div class="card modal-card dialog-card">
+                <h2 class="label-sm modal-title">{{ dialog.title }}</h2>
+                <div class="modal-body">
+                    <p class="dialog-message">{{ dialog.message }}</p>
+                    <div class="modal-footer">
+                        <button v-if="dialog.type === 'confirm'" @click="onDialogAction(false)" class="utility-btn btn-flex btn-padded">{{ t('cancel') }}</button>
+                        <button @click="onDialogAction(true)" class="btn btn-primary btn-padded btn-flex">{{ dialog.type === 'confirm' ? t('delete') : 'OK' }}</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Modal -->
+        <div v-if="editingLog" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="edit-log-title">
+            <div class="card modal-card modal-full-mobile">
+                <header class="modal-header">
+                    <h2 id="edit-log-title" class="label-sm modal-title">{{ t('editLog') }}</h2>
+                    <button @click="cancelEdit" class="action-btn" :aria-label="t('cancel')">
+                        <span class="material-icons-outlined">close</span>
+                    </button>
+                </header>
+                <section class="modal-body">
+                    <div>
+                        <label class="label-sm">{{ t('timeIn') }}</label>
+                        <input type="datetime-local" v-model="editForm.timeIn" class="input-full">
+                    </div>
+                    <div>
+                        <label class="label-sm">{{ t('timeOut') }}</label>
+                        <input type="datetime-local" v-model="editForm.timeOut" class="input-full">
+                    </div>
+                    <div>
+                        <label class="label-sm">{{ t('project') }}</label>
+                        <select v-model="editForm.project" class="input-full">
+                            <option v-for="p in projects" :key="p.name" :value="p.name">{{ p.name }}</option>
+                        </select>
+                    </div>
+                    <div class="modal-footer modal-footer-vertical">
+                        <button @click="saveEdit" class="btn btn-primary btn-padded">{{ t('save') }}</button>
+                        <button @click="cancelEdit" class="utility-btn btn-padded">{{ t('cancel') }}</button>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- Add Project Modal -->
+        <div v-if="showProjectModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="project-modal-title">
+            <div class="card modal-card modal-full-mobile">
+                <header class="modal-header">
+                    <h2 id="project-modal-title" class="label-sm modal-title">{{ isEditMode ? t('editProject') : t('newProject') }}</h2>
+                    <button @click="showProjectModal = false" class="action-btn" :aria-label="t('cancel')">
+                        <span class="material-icons-outlined">close</span>
+                    </button>
+                </header>
+                <section class="modal-body">
+                    <div>
+                        <label class="label-sm">{{ t('projectName') }}</label>
+                        <input type="text" v-model="newProjectData.name" class="input-full" :placeholder="t('projectName')">
+                    </div>
+                    <div>
+                        <label class="label-sm">{{ t('pickColor') }}</label>
+                        <div class="color-grid">
+                            <button v-for="c in colorPalette" 
+                                    type="button"
+                                    :key="c" 
+                                    @click="newProjectData.color = c"
+                                    :style="{ backgroundColor: c }"
+                                    :class="['color-swatch', { active: newProjectData.color === c }]">
+                            </button>
+                        </div>
+                    </div>
+                    <div class="modal-footer modal-footer-vertical">
+                        <button @click="confirmAddProject" class="btn btn-primary btn-padded">{{ isEditMode ? t('update') : t('create') }}</button>
+                        <button @click="showProjectModal = false" class="utility-btn btn-padded">{{ t('cancel') }}</button>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <nav class="nav-bar">
+            <button class="nav-item" :class="{active: currentView === 'dashboard'}" @click="currentView = 'dashboard'">
+                <span class="nav-icon material-icons-outlined">home</span>
+                <span>{{ t('dashboard') }}</span>
+            </button>
+            <button class="nav-item" :class="{active: currentView === 'history'}" @click="currentView = 'history'">
+                <span class="nav-icon material-icons-outlined">history</span>
+                <span>{{ t('history') }}</span>
+            </button>
+            <button class="nav-item" :class="{active: currentView === 'statistics'}" @click="currentView = 'statistics'">
+                <span class="nav-icon material-icons-outlined">insights</span>
+                <span>{{ t('stats') }}</span>
+            </button>
+            <button class="nav-item" :class="{active: currentView === 'reports'}" @click="currentView = 'reports'">
+                <span class="nav-icon material-icons-outlined">summarize</span>
+                <span>{{ t('reports') }}</span>
+            </button>
+            <button class="nav-item" :class="{active: currentView === 'settings'}" @click="currentView = 'settings'">
+                <span class="nav-icon material-icons-outlined">settings</span>
+                <span>{{ t('settings') }}</span>
+            </button>
+        </nav>
+    </div>
+    <script type="module" src="./app/main.js"></script>
+</body>
+</html>
