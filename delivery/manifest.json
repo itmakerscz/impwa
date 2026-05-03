@@ -1,0 +1,9 @@
+{
+  "name": "Receipt Scanner",
+  "short_name": "Scanner",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f8f9fa",
+  "theme_color": "#e67e22",
+  "icons": [{ "src": "https://cdn-icons-png.flaticon.com/512/684/684831.png", "sizes": "512x512", "type": "image/png" }]
+}
