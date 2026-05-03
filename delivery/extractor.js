@@ -1,67 +1,97 @@
 // extractor.js
 export const Extractor = {
+    // Helper to fix common OCR misreads in numbers
+    normalizeNumbers(str) {
+        if (!str) return '';
+        return str
+            .replace(/S/g, '6')
+            .replace(/[O|o]/g, '0')
+            .replace(/i/g, '1')
+            .replace(/B/g, '8')
+            .replace(/\s/g, ''); // Remove spaces for raw data
+    },
+
     patterns: {
-        // Updated: Handles OCR reading "S" instead of "6" or "O" instead of "0" 
-        // Handles "TEL : 602..." and "Tel. 257..."
-        phone: /(?:tel|telefon)\s*[:.]?\s*(?:(?:\+|00)420[\s\/]*)?(\d|[SBO]){3}[\s\-]*(\d|[SBO]){3}[\s\-]*(\d|[SBO]){3}/i,
+        // Updated to catch "TEL : S02..." (misread 6) or "Tel. 257..."
+        phone: /(?:tel|telefon)\s*[:.]?\s*(?:(?:\+|00)420[\s\/]*)?([\dSB]{3})[\s\-]*([\dSB]{3})[\s\-]*([\dSB]{3})/i,
         
-        // Updated: Specifically looks for the Czech ZIP code format (5 digits) 
-        // to avoid picking up random item descriptions.
-        address: /(\d{3}\s?[0O\d]{2})\s+([a-zA-Zá-žÁ-Ž0-ž\s]{2,})/i,
+        // Anchors on the ZIP code (3+2 digits) which is the most stable part of the address
+        zipCity: /(\d{3}|1[iI0O]{2})\s?([0O\d]{2})\s+([a-zA-Zá-žÁ-Ž\s]{3,})/i,
         
-        // Updated: Handles cases where "CELKEM" is on one line and the price is on the next (VISA line)
-        // Also handles "." or "," as decimal separators and spaced "C E L K E M".
+        // Captures monetary values near keywords or at the end of lines
         price: /(?:CELKEM|SUMA|C\s*E\s*L\s*K\s*E\s*M|VISA)\s*[:.]?\s*(?:KC|KČ)?\s*([\d\s]+[.,][\d]{2})/i
     },
 
     extract(text) {
         const lines = text.split('\n');
-        let extracted = { phone: '', address: '', price: '' };
+        let result = { phone: '', address: '', price: '' };
 
-        // Helper to normalize OCR characters
-        const normalizeOCR = (str) => str.replace(/S/g, '6').replace(/O/g, '0').replace(/o/g, '0').replace(/i/g, '1');
+        console.log("--- STARTING REFACTORED EXTRACTION ---");
 
+        // Pass 1: Line by Line
         lines.forEach((line, index) => {
-            const trimmedLine = line.trim();
-            if (!trimmedLine) return;
+            const raw = line.trim();
+            if (!raw) return;
 
-            // 1. Phone: Normalize common OCR errors in numbers
-            if (!extracted.phone) {
-                const phMatch = trimmedLine.match(this.patterns.phone);
-                if (phMatch) {
-                    extracted.phone = normalizeOCR(`${phMatch[1]}${phMatch[2]}${phMatch[3]}`);
+            // 1. Extract Phone
+            if (!result.phone) {
+                const match = raw.match(this.patterns.phone);
+                if (match) {
+                    result.phone = this.normalizeNumbers(`${match[1]}${match[2]}${match[3]}`);
+                    console.log(`Matched Phone on line ${index}: ${result.phone}`);
                 }
             }
 
-            // 2. Address: Look for ZIP code and City
-            if (!extracted.address) {
-                const adMatch = trimmedLine.match(this.patterns.address);
-                if (adMatch) {
-                    extracted.address = `${normalizeOCR(adMatch[1])} ${adMatch[2].trim()}`;
+            // 2. Extract Price (Keyword based)
+            if (!result.price) {
+                const match = raw.match(this.patterns.price);
+                if (match) {
+                    result.price = match[1].trim().replace(/\s/g, '').replace('.', ',') + ' Kč';
+                    console.log(`Matched Price on line ${index}: ${result.price}`);
                 }
             }
 
-            // 3. Price: Check for labels and values
-            if (!extracted.price) {
-                const prMatch = trimmedLine.match(this.patterns.price);
-                if (prMatch) {
-                    extracted.price = prMatch[1].replace(/\s/g, '').replace('.', ',') + ' Kč';
+            // 3. Extract Address (ZIP + City focus)
+            if (!result.address) {
+                const match = raw.match(this.patterns.zipCity);
+                if (match) {
+                    const streetLine = lines[index - 1] ? lines[index - 1].trim() : '';
+                    const zip = this.normalizeNumbers(match[1] + match[2]);
+                    const city = match[3].trim();
+                    
+                    // If the line above doesn't look like an ID number (IC/DIC), assume it's the street
+                    const street = (!streetLine.includes('IC') && streetLine.length > 3) ? streetLine + ', ' : '';
+                    result.address = `${street}${zip.slice(0,3)} ${zip.slice(3)} ${city}`;
+                    console.log(`Matched Address on line ${index}`);
                 }
             }
         });
 
-        // Special Fallback: If price is empty but we see a line with just a monetary value 
-        // near the end of the receipt (common when "CELKEM" is on a separate line)
-        if (!extracted.price) {
+        // Pass 2: Fallbacks for missed data
+        this.applyFallbacks(lines, result);
+
+        console.log("--- EXTRACTION COMPLETE ---", result);
+        return result;
+    },
+
+    applyFallbacks(lines, result) {
+        // Fallback for Price: Look for the last line that contains a price-like format
+        // This solves the Yves Rocher issue where CELKEM and the value are separated
+        if (!result.price) {
             for (let i = lines.length - 1; i >= 0; i--) {
-                const valMatch = lines[i].match(/(\d+[\s.,]\d{2})(?:\s*K[CČ])?$/i);
-                if (valMatch) {
-                    extracted.price = valMatch[1].replace(/\s/g, '').replace('.', ',') + ' Kč';
+                const line = lines[i].trim();
+                const priceOnlyMatch = line.match(/([\d\s]+[.,]\d{2})(?:\s*K[CČ])?$/i);
+                if (priceOnlyMatch && !line.includes('%')) { // Avoid tax % lines
+                    result.price = priceOnlyMatch[1].trim().replace(/\s/g, '').replace('.', ',') + ' Kč';
+                    console.log("Fallback Price found at end of receipt");
                     break;
                 }
             }
         }
 
-        return extracted;
+        // Clean up any remaining OCR artifacts in address
+        if (result.address) {
+            result.address = result.address.replace(/[iI]/g, '1');
+        }
     }
 };
