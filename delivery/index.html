@@ -66,6 +66,25 @@
                 </button>
             </div>
         </div>
+
+        <!-- Add this inside the #app div, below the input card -->
+<div class="card" v-if="rawLines.length > 0">
+    <details>
+        <summary>🔍 Zobrazit načtený text (řádek po řádku)</summary>
+        <div class="raw-data-list">
+            <div v-for="(line, index) in rawLines" :key="index" class="raw-line">
+                <small class="line-num">{{ index }}:</small> {{ line }}
+            </div>
+        </div>
+    </details>
+</div>
+
+<style>
+    details summary { cursor: pointer; color: var(--primary); font-weight: bold; outline: none; }
+    .raw-data-list { margin-top: 10px; background: #2c3e50; color: #ecf0f1; padding: 10px; border-radius: 8px; font-family: monospace; font-size: 0.8rem; max-height: 200px; overflow-y: auto; }
+    .raw-line { border-bottom: 1px solid #34495e; padding: 2px 0; }
+    .line-num { color: #95a5a6; margin-right: 8px; }
+</style>
     </div>
 
     <script type="module" src="app.js"></script>
