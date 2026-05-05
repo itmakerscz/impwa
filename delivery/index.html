@@ -12,39 +12,211 @@
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     
     <style>
-        :root { --primary: #e67e22; --bg: #f4f7f6; --success: #2ecc71; --dark: #2f3542; }
-        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); margin: 0; padding: 15px; color: #2c3e50; }
-        
-        /* Layout Cards */
-        .card { background: white; padding: 18px; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 15px; border: 1px solid rgba(0,0,0,0.03); }
-        
-        /* Sticky Header */
-        .sticky-header { position: sticky; top: 0; z-index: 10; background: var(--bg); padding-bottom: 10px; }
-        .search-input { border: 2px solid var(--primary); font-weight: 500; margin-bottom: 8px; width: 100%; padding: 12px; border-radius: 10px; box-sizing: border-box; font-size: 1rem; }
-        
-        /* Filter Segmented Control */
-        .filter-group { display: flex; gap: 4px; background: #dfe4ea; padding: 4px; border-radius: 10px; }
-        .btn-filter { flex: 1; border: none; padding: 8px; border-radius: 8px; font-size: 0.75rem; font-weight: bold; cursor: pointer; background: transparent; }
-        .btn-filter.active { background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); color: var(--primary); }
-        
-        /* Form */
-        label { font-size: 0.7rem; color: #7f8c8d; font-weight: bold; text-transform: uppercase; display: block; margin-top: 10px; }
-        input.form-control { width: 100%; padding: 12px; margin: 4px 0; border: 1px solid #dcdde1; border-radius: 10px; box-sizing: border-box; font-size: 1rem; }
-        
-        /* Buttons */
-        .btn { border: none; padding: 14px; border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1rem; display: flex; align-items: center; justify-content: center; gap: 8px; }
-        .btn-main { background: var(--primary); color: white; margin-bottom: 15px; }
-        .btn-save { background: var(--success); color: white; flex: 1; }
-        .btn-reset { background: #f1f2f6; color: #7f8c8d; width: 50px; }
-        .btn-action { background: #f1f2f6; flex: 1; font-size: 0.85rem; color: var(--dark); text-decoration: none; border: 1px solid #dfe4ea; height: 40px; }
-        .btn-waze { background: #33f0ff; border: none; color: #000; }
-        
-        /* Indicators */
-        .loading { text-align: center; color: var(--primary); padding: 10px; font-weight: bold; }
-        .price-text { color: var(--success); font-size: 1.2rem; font-weight: 800; }
-        .date-badge { background: #f1f2f6; color: #7f8c8d; padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; }
-        .actions { display: flex; gap: 10px; margin-top: 12px; }
-        .raw-box { background: var(--dark); color: #ced6e0; padding: 12px; border-radius: 10px; max-height: 150px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; margin-top: 10px; }
+:root {
+    --primary: #e67e22;
+    --primary-dark: #d35400;
+    --bg: #f0f2f5;
+    --card-bg: #ffffff;
+    --success: #27ae60;
+    --dark: #2c3e50;
+    --text-muted: #7f8c8d;
+    --border: #dcdde1;
+    --shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    margin: 0;
+    padding: 16px;
+    color: var(--dark);
+    line-height: 1.5;
+}
+
+/* Sticky Header */
+.sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--bg);
+    padding: 8px 0 16px 0;
+}
+
+.search-input {
+    width: 100%;
+    padding: 14px 18px;
+    border: 2px solid transparent;
+    border-radius: 12px;
+    background: var(--card-bg);
+    box-shadow: var(--shadow);
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    box-sizing: border-box;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 4px rgba(230, 126, 34, 0.15);
+}
+
+/* Filter Tabs */
+.filter-group {
+    display: flex;
+    gap: 6px;
+    background: #e0e0e0;
+    padding: 4px;
+    border-radius: 10px;
+    margin-top: 12px;
+}
+
+.btn-filter {
+    flex: 1;
+    border: none;
+    padding: 10px 4px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: transparent;
+    color: var(--text-muted);
+    transition: 0.2s;
+}
+
+.btn-filter.active {
+    background: var(--card-bg);
+    color: var(--primary);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Main Cards */
+.card {
+    background: var(--card-bg);
+    padding: 20px;
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    margin-bottom: 16px;
+    border: 1px solid rgba(0,0,0,0.02);
+}
+
+/* Form Styling */
+label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: block;
+    margin-top: 14px;
+}
+
+input.form-control {
+    width: 100%;
+    padding: 12px;
+    margin: 6px 0;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: border-color 0.2s;
+}
+
+input.form-control:focus {
+    border-color: var(--primary);
+    outline: none;
+}
+
+/* Buttons */
+.btn {
+    border: none;
+    padding: 14px;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: transform 0.1s active, opacity 0.2s;
+}
+
+.btn:active { transform: scale(0.98); }
+
+.btn-main {
+    background: var(--primary);
+    color: white;
+    margin-bottom: 20px;
+}
+
+.btn-save {
+    background: var(--success);
+    color: white;
+    flex: 1;
+}
+
+.btn-reset {
+    background: #f1f2f6;
+    color: var(--text-muted);
+    width: 56px;
+}
+
+.btn-action {
+    background: #f8f9fa;
+    color: var(--dark);
+    text-decoration: none;
+    border: 1.5px solid var(--border);
+    flex: 1;
+    font-size: 0.9rem;
+}
+
+.btn-waze {
+    background: #33f0ff;
+    border-color: transparent;
+    color: #000;
+}
+
+/* Typography & Badges */
+.price-text {
+    color: var(--success);
+    font-size: 1.4rem;
+    font-weight: 800;
+}
+
+.date-badge {
+    background: #f1f2f6;
+    color: var(--text-muted);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+/* Loading Animation */
+.loading {
+    text-align: center;
+    color: var(--primary);
+    padding: 15px;
+    font-weight: bold;
+    font-size: 0.9rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.raw-box {
+    background: #1e272e;
+    color: #d2dae2;
+    padding: 14px;
+    border-radius: 12px;
+    max-height: 180px;
+    font-size: 0.8rem;
+    line-height: 1.6;
+}
     </style>
 </head>
 <body>
