@@ -22,30 +22,43 @@ createApp({
 
         const triggerCam = () => fileInput.value?.click();
 
-        const onFileSelect = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
+        // Inside app.js
+const onFileSelect = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-            loading.value = true;
-            rawLines.value = [];
-            
-            try {
-                const worker = await Tesseract.createWorker('ces');
-                const { data: { text } } = await worker.recognize(file);
-                
-                // Set raw data for line-by-line debugging
-                rawLines.value = text.split('\n').filter(l => l.trim() !== '');
-                
-                // Extract structured data
-                form.value = Extractor.extract(text);
-                
-                await worker.terminate();
-            } catch (err) {
-                console.error("OCR Error:", err);
-            } finally {
-                loading.value = false;
-            }
-        };
+    loading.value = true;
+    rawLines.value = [];
+    
+    try {
+        const worker = await Tesseract.createWorker('ces');
+        const { data: { text } } = await worker.recognize(file);
+        
+        // 1. Split text into lines
+        const allLines = text.split('\n').map(l => l.trim());
+
+        // 2. Filter for lines starting with //
+        const filteredLines = allLines.filter(line => line.startsWith('//'));
+
+        // 3. Log only those specific lines to the console
+        console.log("--- FILTERED LOG (Lines starting with //) ---");
+        filteredLines.forEach((line, index) => {
+            console.log(`Match ${index}: ${line}`);
+        });
+
+        // Update UI debug view with all lines (or just filtered ones if preferred)
+        rawLines.value = allLines.filter(l => l !== '');
+        
+        // Extract structured data
+        form.value = Extractor.extract(text);
+        
+        await worker.terminate();
+    } catch (err) {
+        console.error("OCR Error:", err);
+    } finally {
+        loading.value = false;
+    }
+};
 
         const addItem = () => {
             if (!form.value.address && !form.value.price) return;
