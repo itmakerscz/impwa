@@ -8,7 +8,6 @@
     <link rel="icon" href="data:,">
     <title>Scanner Účtenek PRO</title>
     
-    <!-- External Dependencies -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     
@@ -19,119 +18,97 @@
         /* Layout Cards */
         .card { background: white; padding: 18px; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 15px; border: 1px solid rgba(0,0,0,0.03); }
         
-        /* Search & Filter Header */
+        /* Sticky Header */
         .sticky-header { position: sticky; top: 0; z-index: 10; background: var(--bg); padding-bottom: 10px; }
-        .search-input { border: 2px solid var(--primary); font-weight: 500; margin-bottom: 8px; }
+        .search-input { border: 2px solid var(--primary); font-weight: 500; margin-bottom: 8px; width: 100%; padding: 12px; border-radius: 10px; box-sizing: border-box; font-size: 1rem; }
         
         /* Filter Segmented Control */
-        .filter-group { display: flex; gap: 4px; background: #dfe4ea; padding: 4px; border-radius: 10px; margin-bottom: 5px; }
-        .btn-filter { flex: 1; border: none; padding: 8px; border-radius: 8px; font-size: 0.75rem; font-weight: bold; cursor: pointer; background: transparent; transition: 0.2s; }
+        .filter-group { display: flex; gap: 4px; background: #dfe4ea; padding: 4px; border-radius: 10px; }
+        .btn-filter { flex: 1; border: none; padding: 8px; border-radius: 8px; font-size: 0.75rem; font-weight: bold; cursor: pointer; background: transparent; }
         .btn-filter.active { background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); color: var(--primary); }
         
-        /* Form Styling */
-        label { font-size: 0.7rem; color: #7f8c8d; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
-        input { width: 100%; padding: 12px; margin: 4px 0 12px 0; border: 1px solid #dcdde1; border-radius: 10px; box-sizing: border-box; font-size: 1rem; }
+        /* Form */
+        label { font-size: 0.7rem; color: #7f8c8d; font-weight: bold; text-transform: uppercase; display: block; margin-top: 10px; }
+        input.form-control { width: 100%; padding: 12px; margin: 4px 0; border: 1px solid #dcdde1; border-radius: 10px; box-sizing: border-box; font-size: 1rem; }
         
         /* Buttons */
         .btn { border: none; padding: 14px; border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1rem; display: flex; align-items: center; justify-content: center; gap: 8px; }
-        .btn-main { background: var(--primary); color: white; margin-bottom: 12px; box-shadow: 0 4px 10px rgba(230, 126, 34, 0.3); }
-        .btn-save { background: var(--success); color: white; }
-        .btn-action { background: #f1f2f6; flex: 1; font-size: 0.85rem; color: var(--dark); text-decoration: none; border: 1px solid #dfe4ea; line-height: 1; }
+        .btn-main { background: var(--primary); color: white; margin-bottom: 15px; }
+        .btn-save { background: var(--success); color: white; flex: 1; }
+        .btn-reset { background: #f1f2f6; color: #7f8c8d; width: 50px; }
+        .btn-action { background: #f1f2f6; flex: 1; font-size: 0.85rem; color: var(--dark); text-decoration: none; border: 1px solid #dfe4ea; height: 40px; }
         .btn-waze { background: #33f0ff; border: none; color: #000; }
         
-        /* Status & Badges */
-        .loading { text-align: center; color: var(--primary); padding: 15px; font-weight: bold; animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
-        .price-text { color: var(--success); font-size: 1.3rem; font-weight: 800; }
-        .date-badge { background: #f1f2f6; color: #7f8c8d; padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; }
-        .actions { display: flex; gap: 10px; margin-top: 15px; }
-
-        /* Raw Data */
+        /* Indicators */
+        .loading { text-align: center; color: var(--primary); padding: 10px; font-weight: bold; }
+        .price-text { color: var(--success); font-size: 1.2rem; font-weight: 800; }
+        .date-badge { background: #f1f2f6; color: #7f8c8d; padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; }
+        .actions { display: flex; gap: 10px; margin-top: 12px; }
         .raw-box { background: var(--dark); color: #ced6e0; padding: 12px; border-radius: 10px; max-height: 150px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; margin-top: 10px; }
     </style>
 </head>
 <body>
     <div id="app">
-        <!-- Sticky Header: Search and Time Filters -->
         <div class="sticky-header">
             <input v-model="searchQuery" class="search-input" placeholder="🔍 Hledat v historii...">
-            
             <div class="filter-group" v-if="!searchQuery">
-                <button :class="['btn-filter', { active: filterMode === 'day' }]" @click="filterMode = 'day'">Dnes</button>
-                <button :class="['btn-filter', { active: filterMode === 'week' }]" @click="filterMode = 'week'">Týden</button>
-                <button :class="['btn-filter', { active: filterMode === 'month' }]" @click="filterMode = 'month'">Měsíc</button>
-                <button :class="['btn-filter', { active: filterMode === 'all' }]" @click="filterMode = 'all'">Vše</button>
-            </div>
-            <div v-else style="padding: 5px; color: var(--primary); font-size: 0.8rem; font-weight: bold;">
-                🔎 Výsledky vyhledávání v celé historii
-            </div>
-        </div>
-
-        <!-- Scanner Card -->
-        <div class="card">
-            <div v-if="loading" class="loading">🔄 Tesseract analyzuje účtenku...</div>
-            
-            <input type="file" ref="fileInput" accept="image/*" capture="environment" @change="onFileSelect" hidden>
-            <button class="btn btn-main" @click="triggerCam">
-                <span>📷</span> Vyfotit / Nahrát Účtenku
-            </button>
-            
-            <div v-if="form.address || form.price || form.phone">
-                <label>📍 Adresa</label>
-                <input v-model="form.address" placeholder="Ulice, Město">
-                
-                <label>📞 Telefon</label>
-                <input v-model="form.phone" placeholder="+420...">
-                
-                <label>💰 Cena</label>
-                <input v-model="form.price" placeholder="0,00 Kč">
-                
-                <button class="btn btn-save" @click="addItem">
-                    <span>✅</span> Uložit do Seznamu
+                <button v-for="m in ['day', 'week', 'month', 'all']" 
+                        :class="['btn-filter', { active: filterMode === m }]" 
+                        @click="filterMode = m">
+                    {{ {day:'Dnes', week:'Týden', month:'Měsíc', all:'Vše'}[m] }}
                 </button>
             </div>
         </div>
 
-        <!-- Debug Raw Logs -->
+        <!-- Recipe Form (Always Visible) -->
+        <div class="card">
+            <div v-if="loading" class="loading">⏳ Analyzuji účtenku...</div>
+            
+            <input type="file" ref="fileInput" accept="image/*" capture="environment" @change="onFileSelect" hidden>
+            <button class="btn btn-main" @click="triggerCam">📷 Vyfotit Účtenku</button>
+            
+            <label>📍 Adresa</label>
+            <input v-model="form.address" class="form-control" placeholder="Ulice, Město">
+            
+            <label>📞 Telefon</label>
+            <input v-model="form.phone" class="form-control" placeholder="+420...">
+            
+            <label>💰 Cena</label>
+            <input v-model="form.price" class="form-control" placeholder="0,00 Kč">
+            
+            <div class="actions">
+                <button class="btn btn-save" @click="addItem">✅ Uložit</button>
+                <button class="btn btn-reset" @click="resetForm">✖</button>
+            </div>
+        </div>
+
+        <!-- Debug Log -->
         <div class="card" v-if="rawLines.length > 0">
             <details>
-                <summary>🔍 RAW DATA (Log pouze řádků s //)</summary>
+                <summary>🔍 Raw OCR Log (//)</summary>
                 <div class="raw-box">
-                    <div v-for="(line, i) in rawLines" :key="i">
+                    <div v-for="line in rawLines">
                         <span :style="{color: line.startsWith('//') ? '#e67e22' : 'inherit'}">{{line}}</span>
                     </div>
                 </div>
             </details>
         </div>
 
-        <!-- Orders History -->
+        <!-- History -->
         <div v-for="item in filteredItems" :key="item.id" class="card">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="display: flex; justify-content: space-between;">
                 <div style="flex: 1;">
-                    <strong style="display: block; font-size: 1.1rem; margin-bottom: 4px;">{{ item.address || 'Neznámá adresa' }}</strong>
+                    <strong style="display: block; margin-bottom: 4px;">{{ item.address || 'Bez adresy' }}</strong>
                     <span class="price-text">{{ item.price }}</span>
                 </div>
                 <span class="date-badge">{{ item.date }}</span>
             </div>
-
             <div class="actions">
-                <a v-if="item.phone" class="btn btn-action" :href="'tel:' + item.phone">
-                    <span>📞</span> Volat
-                </a>
-                <button v-if="item.address" class="btn btn-action btn-waze" @click="navigate(item.address)">
-                    <span>🚗</span> Waze
-                </button>
+                <a v-if="item.phone" class="btn btn-action" :href="'tel:' + item.phone">📞 Volat</a>
+                <button v-if="item.address" class="btn btn-action btn-waze" @click="navigate(item.address)">🚗 Waze</button>
             </div>
         </div>
-
-        <!-- Empty State -->
-        <div v-if="filteredItems.length === 0" style="text-align: center; padding: 40px 20px; color: #a4b0be;">
-            <div style="font-size: 3rem; margin-bottom: 10px;">📋</div>
-            <p>Žádné záznamy pro vybrané období.</p>
-        </div>
     </div>
-
-    <!-- Application Script -->
     <script type="module" src="app.js"></script>
 </body>
 </html>
