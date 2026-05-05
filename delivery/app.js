@@ -22,7 +22,7 @@ createApp({
 
         const triggerCam = () => fileInput.value?.click();
 
-        // Inside app.js
+// Inside app.js
 const onFileSelect = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -34,22 +34,27 @@ const onFileSelect = async (e) => {
         const worker = await Tesseract.createWorker('ces');
         const { data: { text } } = await worker.recognize(file);
         
-        // 1. Split text into lines
+        // 1. Split text into individual lines
         const allLines = text.split('\n').map(l => l.trim());
 
         // 2. Filter for lines starting with //
-        const filteredLines = allLines.filter(line => line.startsWith('//'));
+        const commentLines = allLines.filter(line => line.startsWith('//'));
 
-        // 3. Log only those specific lines to the console
-        console.log("--- FILTERED LOG (Lines starting with //) ---");
-        filteredLines.forEach((line, index) => {
-            console.log(`Match ${index}: ${line}`);
-        });
+        // 3. Log ONLY these filtered lines to the console
+        console.log("--- START FILTERED LOG (// lines only) ---");
+        if (commentLines.length > 0) {
+            commentLines.forEach((line, index) => {
+                console.log(`[Match ${index}]: ${line}`);
+            });
+        } else {
+            console.log("No lines starting with // were found.");
+        }
+        console.log("--- END FILTERED LOG ---");
 
-        // Update UI debug view with all lines (or just filtered ones if preferred)
+        // Keep the UI raw data view updated with everything for transparency
         rawLines.value = allLines.filter(l => l !== '');
         
-        // Extract structured data
+        // Run extraction for the form fields
         form.value = Extractor.extract(text);
         
         await worker.terminate();
