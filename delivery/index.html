@@ -208,14 +208,48 @@ input.form-control:focus {
     text-transform: uppercase;
 }
 
+
+
+        /* Container for the debug log */
+.card-debug {
+    margin-top: 10px;
+    border: 1px dashed var(--border);
+    background: #fdfdfd;
+}
+
+/* The scrollable box itself */
 .raw-box {
-    background: #1e272e;
-    color: #d2dae2;
+    background: #1e272e; /* Deep dark background */
+    color: #d2dae2;      /* Light gray text */
     padding: 14px;
     border-radius: 12px;
-    max-height: 180px;
-    font-size: 0.8rem;
-    line-height: 1.6;
+    
+    /* SCROLL LOGIC */
+    max-height: 200px;   /* Fixed height */
+    overflow-y: auto;    /* Enable vertical scrolling */
+    overflow-x: hidden;  /* Prevent horizontal mess */
+    
+    /* Typography */
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    white-space: pre-wrap; /* Preserve line breaks from Tesseract */
+    word-break: break-all;
+}
+
+/* Custom Scrollbar for a "PRO" look */
+.raw-box::-webkit-scrollbar {
+    width: 6px;
+}
+
+.raw-box::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+}
+
+.raw-box::-webkit-scrollbar-thumb {
+    background: var(--primary);
+    border-radius: 10px;
 }
     </style>
 </head>
@@ -255,16 +289,20 @@ input.form-control:focus {
         </div>
 
         <!-- Debug Log -->
-        <div class="card" v-if="rawLines.length > 0">
-            <details>
-                <summary>🔍 Raw OCR Log (//)</summary>
-                <div class="raw-box">
-                    <div v-for="line in rawLines">
-                        <span :style="{color: line.startsWith('//') ? '#e67e22' : 'inherit'}">{{line}}</span>
-                    </div>
-                </div>
-            </details>
+        <div class="card card-debug" v-if="rawLines.length > 0">
+    <details>
+        <summary style="cursor: pointer; color: var(--text-muted); font-size: 0.8rem; font-weight: 600; padding: 5px;">
+            🔍 Zobrazit kompletní OCR záznam ({{ rawLines.length }} řádků)
+        </summary>
+        <div class="raw-box">
+            <div v-for="(line, index) in rawLines" :key="index" 
+                 :style="{ color: line.startsWith('//') ? 'var(--primary)' : 'inherit', marginBottom: '4px' }">
+                <span style="opacity: 0.3; margin-right: 8px;">{{ index + 1 }}</span>
+                {{ line }}
+            </div>
         </div>
+    </details>
+</div>
 
         <!-- History -->
         <div v-for="item in filteredItems" :key="item.id" class="card">
