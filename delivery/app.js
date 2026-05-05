@@ -4,69 +4,123 @@ const { createApp, ref, onMounted, computed } = Vue;
 
 createApp({
     setup() {
+        // --- State Management ---
         const loading = ref(false);
         const items = ref([]);
         const rawLines = ref([]); 
         const searchQuery = ref('');
-        const filterMode = ref('day');
+        const filterMode = ref('day'); // day, week, month, all
         const fileInput = ref(null);
 
-        const form = ref({ phone: '', address: '', price: '', date: '', timestamp: 0 });
+        // Form state initialized with today's metadata
+        const form = ref({ 
+            phone: '', 
+            address: '', 
+            price: '', 
+            date: new Date().toLocaleDateString('cs-CZ'), 
+            timestamp: Date.now() 
+        });
 
+        // --- Lifecycle ---
         onMounted(() => {
             const saved = localStorage.getItem('receipt_store_v2');
             if (saved) items.value = JSON.parse(saved);
+            
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('./sw.js').catch(err => console.log(err));
+            }
         });
 
+        // --- Search & Filtering Logic ---
         const filteredItems = computed(() => {
             const query = searchQuery.value.toLowerCase().trim();
+            
+            // 1. Global Search Mode (Overrides date filters)
             if (query) {
-                return items.value.filter(i => 
-                    i.address?.toLowerCase().includes(query) || i.phone?.includes(query)
-                );
+                return items.value.filter(item => {
+                    // Normalize phone search to handle the "+" character
+                    const cleanQuery = query.replace('+', '');
+                    const cleanPhone = item.phone?.replace('+', '') || '';
+                    
+                    const inPhone = cleanPhone.includes(cleanQuery);
+                    const inAddr = item.address?.toLowerCase().includes(query);
+                    const inPrice = item.price?.includes(query);
+                    
+                    return inPhone || inAddr || inPrice;
+                });
             }
 
+            // 2. History Filter Mode
             const now = new Date();
             return items.value.filter(item => {
                 if (!item.timestamp) return false;
-                const d = new Date(item.timestamp);
-                if (filterMode.value === 'day') return d.toDateString() === now.toDateString();
-                if (filterMode.value === 'month') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-                if (filterMode.value === 'week') {
-                    const start = new Date(now);
-                    start.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1));
-                    start.setHours(0,0,0,0);
-                    return d >= start;
+                const itemDate = new Date(item.timestamp);
+                
+                if (filterMode.value === 'day') {
+                    return itemDate.toDateString() === now.toDateString();
                 }
-                return true;
+                
+                if (filterMode.value === 'week') {
+                    const startOfWeek = new Date(now);
+                    const day = now.getDay();
+                    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+                    startOfWeek.setDate(diff);
+                    startOfWeek.setHours(0,0,0,0);
+                    return itemDate >= startOfWeek;
+                }
+                
+                if (filterMode.value === 'month') {
+                    return itemDate.getMonth() === now.getMonth() && 
+                           itemDate.getFullYear() === now.getFullYear();
+                }
+
+                return true; // 'all' mode
             });
         });
 
+        // --- Actions ---
         const triggerCam = () => fileInput.value?.click();
 
         const resetForm = () => {
-            form.value = { phone: '', address: '', price: '', date: '', timestamp: 0 };
+            const now = new Date();
+            form.value = { 
+                phone: '', 
+                address: '', 
+                price: '', 
+                date: now.toLocaleDateString('cs-CZ'), 
+                timestamp: now.getTime() 
+            };
             rawLines.value = [];
         };
 
         const onFileSelect = async (e) => {
             const file = e.target.files[0];
             if (!file) return;
+
             loading.value = true;
+            rawLines.value = [];
+            
             try {
                 const worker = await Tesseract.createWorker('ces');
                 const { data: { text } } = await worker.recognize(file);
-                const allLines = text.split('\n').map(l => l.trim());
-                rawLines.value = allLines.filter(l => l !== '');
                 
+                // Show only lines starting with // in the debug view
+                const allLines = text.split('\n').map(l => l.trim());
+                rawLines.value = allLines.filter(l => l.startsWith('//'));
+
+                // Extract data (Extractor only processes // lines)
                 const result = Extractor.extract(text);
                 const now = new Date();
+                
                 form.value = { 
                     ...result, 
-                    date: now.toLocaleDateString('cs-CZ'), 
+                    date: now.toLocaleDateString('cs-CZ'),
                     timestamp: now.getTime() 
                 };
+                
                 await worker.terminate();
+            } catch (err) {
+                console.error("OCR Error:", err);
             } finally {
                 loading.value = false;
             }
@@ -74,23 +128,25 @@ createApp({
 
         const addItem = () => {
             if (!form.value.address && !form.value.price) return;
-            const now = new Date();
-            const entry = { 
+            
+            items.value.unshift({ 
                 ...form.value, 
-                id: Date.now(),
-                date: form.value.date || now.toLocaleDateString('cs-CZ'),
-                timestamp: form.value.timestamp || now.getTime()
-            };
-            items.value.unshift(entry);
+                id: Date.now() 
+            });
+            
             localStorage.setItem('receipt_store_v2', JSON.stringify(items.value));
             resetForm();
         };
 
-        const navigate = (addr) => {
-            const url = `waze://?q=${encodeURIComponent(addr)}&navigate=yes`;
-            window.location.href = url;
+        const navigate = (address) => {
+            if (!address) return;
+            const encoded = encodeURIComponent(address);
+            window.location.href = `waze://?q=${encoded}&navigate=yes`;
+            
             setTimeout(() => {
-                if (!document.hidden) window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`);
+                if (!document.hidden) {
+                    window.open(`https://www.google.com/maps/search/?api=1&query=${encoded}`, '_blank');
+                }
             }, 500);
         };
 
