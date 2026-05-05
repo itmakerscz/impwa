@@ -6,7 +6,7 @@ createApp({
     setup() {
         const loading = ref(false);
         const items = ref([]);
-        const rawLines = ref([]); // New ref for line-by-line view
+        const rawLines = ref([]); 
         const form = ref({ phone: '', address: '', price: '' });
         const fileInput = ref(null);
 
@@ -14,8 +14,9 @@ createApp({
             const saved = localStorage.getItem('receipt_store_v1');
             if (saved) items.value = JSON.parse(saved);
             
+            // Register PWA Service Worker
             if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('./sw.js').catch(err => console.log(err));
+                navigator.serviceWorker.register('./sw.js').catch(err => console.log("SW error:", err));
             }
         });
 
@@ -26,13 +27,13 @@ createApp({
             if (!file) return;
 
             loading.value = true;
-            rawLines.value = []; // Reset previous lines
+            rawLines.value = [];
             
             try {
                 const worker = await Tesseract.createWorker('ces');
                 const { data: { text } } = await worker.recognize(file);
                 
-                // Store raw lines for display
+                // Set raw data for line-by-line debugging
                 rawLines.value = text.split('\n').filter(l => l.trim() !== '');
                 
                 // Extract structured data
@@ -50,21 +51,24 @@ createApp({
             if (!form.value.address && !form.value.price) return;
             items.value.unshift({ ...form.value, id: Date.now() });
             localStorage.setItem('receipt_store_v1', JSON.stringify(items.value));
+            
+            // Reset state
             form.value = { phone: '', address: '', price: '' };
-            rawLines.value = []; // Clear debug view after saving
+            rawLines.value = [];
         };
 
-        const navigate = (address) => {
-            const encoded = encodeURIComponent(address);
+        const callNum = (num) => window.location.href = `tel:${num}`;
+
+        const navigate = (addr) => {
+            const encoded = encodeURIComponent(addr);
+            // Try Waze deep link
             window.location.href = `waze://?q=${encoded}&navigate=yes`;
+            // Fallback to Google Maps if Waze is not installed
             setTimeout(() => {
-                if (!document.hidden) window.open(`https://maps.google.com/?q=${encoded}`, '_blank');
+                if (!document.hidden) window.open(`https://www.google.com/maps/search/?api=1&query=${encoded}`);
             }, 500);
         };
 
-        return { 
-            loading, form, items, rawLines, fileInput, 
-            triggerCam, onFileSelect, addItem, navigate 
-        };
+        return { loading, form, items, rawLines, fileInput, triggerCam, onFileSelect, addItem, callNum, navigate };
     }
 }).mount('#app');
