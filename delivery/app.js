@@ -93,38 +93,44 @@ createApp({
             rawLines.value = [];
         };
 
-        const onFileSelect = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
+// app.js
+const onFileSelect = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-            loading.value = true;
-            rawLines.value = [];
-            
-            try {
-                const worker = await Tesseract.createWorker('ces');
-                const { data: { text } } = await worker.recognize(file);
-                
-                // Show only lines starting with // in the debug view
-                const allLines = text.split('\n').map(l => l.trim());
-                rawLines.value = allLines.filter(l => l.startsWith('//'));
+    loading.value = true;
+    rawLines.value = [];
+    
+    try {
+        const worker = await Tesseract.createWorker('ces');
+        const { data: { text } } = await worker.recognize(file);
+        
+        // 1. Show EVERY line in the UI/Logs for transparency
+        const allLines = text.split('\n').map(l => l.trim()).filter(l => l !== '');
+        rawLines.value = allLines;
 
-                // Extract data (Extractor only processes // lines)
-                const result = Extractor.extract(text);
-                const now = new Date();
-                
-                form.value = { 
-                    ...result, 
-                    date: now.toLocaleDateString('cs-CZ'),
-                    timestamp: now.getTime() 
-                };
-                
-                await worker.terminate();
-            } catch (err) {
-                console.error("OCR Error:", err);
-            } finally {
-                loading.value = false;
-            }
+        // 2. Log full text to console for deep debugging
+        console.log("--- FULL EXTRACTED TEXT ---");
+        console.log(text);
+        console.log("---------------------------");
+
+        // 3. Extract data (The Extractor itself will filter for //)
+        const result = Extractor.extract(text);
+        
+        const now = new Date();
+        form.value = { 
+            ...result, 
+            date: now.toLocaleDateString('cs-CZ'),
+            timestamp: now.getTime() 
         };
+        
+        await worker.terminate();
+    } catch (err) {
+        console.error("OCR Error:", err);
+    } finally {
+        loading.value = false;
+    }
+};
 
         const addItem = () => {
             if (!form.value.address && !form.value.price) return;
