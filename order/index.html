@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hlasová Objednávka 2026</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#FFD700">
+</head>
+<body>
+    <div id="app" v-cloak>
+        <header role="banner">
+            <div class="logo-circle" :class="{ pulsing: isListening }"></div>
+            <h1>Pizza Voice</h1>
+        </header>
+
+        <main role="main">
+            <section class="voice-section" aria-labelledby="voice-status">
+                <h2 id="voice-status">{{ statusMessage }}</h2>
+                <button 
+                    @click="toggleListening" 
+                    :aria-pressed="isListening"
+                    class="mic-btn"
+                >
+                    <span v-if="!isListening">🎤 Start</span>
+                    <span v-else>🛑 Stop</span>
+                </button>
+                <p role="log" aria-live="polite" class="transcript">
+                    {{ transcript || 'Zde se zobrazí váš hlas...' }}
+                </p>
+            </section>
+
+            <transition name="fade">
+                <section v-if="order" class="order-result" aria-labelledby="order-title">
+                    <h2 id="order-title">Detaily objednávky</h2>
+                    <div class="card-grid">
+                        <div class="card">
+                            <label>Produkt</label>
+                            <p>{{ order.item }}</p>
+                        </div>
+                        <div class="card">
+                            <label>Množství</label>
+                            <p>{{ order.quantity }}x</p>
+                        </div>
+                        <div class="card">
+                            <label>Adresa</label>
+                            <p>{{ order.address }}</p>
+                        </div>
+                        <div class="card">
+                            <label>Telefon</label>
+                            <p>{{ order.phone }}</p>
+                        </div>
+                    </div>
+                    <button class="confirm-btn" @click="clearOrder">Nová objednávka</button>
+                </section>
+            </transition>
+        </main>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="storage.js"></script>
+    <script src="app.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js');
+        }
+    </script>
+</body>
+</html>
