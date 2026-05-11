@@ -1,67 +1,56 @@
+import { saveToDB } from './storage.js';
+
 const { createApp, ref, computed } = Vue;
+const artyom = new Artyom();
 
 createApp({
     setup() {
-        const transcript = ref('');
+        const transcript = ref('Klikněte na mikrofon a objednejte...');
         const isListening = ref(false);
         const order = ref(null);
 
-        // Web Speech API
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        const recognition = new SpeechRecognition();
-        recognition.lang = 'cs-CZ';
-        recognition.continuous = false;
+        const statusMessage = computed(() => isListening.value ? "Poslouchám vás..." : "Připraven");
 
-        const statusMessage = computed(() => 
-            isListening.value ? "Poslouchám..." : "Připraven k objednávce"
-        );
+        // Simple Czech Extraction Logic
+        const extractData = (text) => {
+            const raw = text.toLowerCase();
+            const phone = raw.replace(/\s/g, '').match(/\d{9}/)?.[0] || "Neuvedeno";
+            const qty = raw.match(/\d+/)?.[0] || "1";
+            const item = raw.match(/(?:pizzu|pizzy|pizza)\s+([a-zěščřžýáíéóúů\s]+?)(?=\sna|v\s|ulici|$)/i)?.[1] || "Margarita";
+            const addr = raw.match(/(?:na adresu|ulici|ulice|do)\s+(.*)/i)?.[1]?.replace(phone, '').trim() || "Osobní odběr";
 
-        // Text-to-Speech (Voice reading back)
-        const speak = (text) => {
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'cs-CZ';
-            window.speechSynthesis.speak(utterance);
+            return { item: `Pizza ${item}`, quantity: qty, address: addr, phone };
         };
 
-        const toggleListening = () => {
+        const toggleMic = () => {
             if (isListening.value) {
-                recognition.stop();
+                artyom.fatality().then(() => isListening.value = false);
             } else {
-                recognition.start();
-                isListening.value = true;
+                artyom.initialize({
+                    lang: "cs-CZ",
+                    continuous: false,
+                    listen: true,
+                    speed: 1
+                }).then(() => {
+                    isListening.value = true;
+                    artyom.say("Co si dáte?");
+                });
             }
         };
 
-        recognition.onresult = (event) => {
-            const text = event.results[0][0].transcript;
-            transcript.value = text;
-            extractOrder(text);
-            isListening.value = false;
-        };
+        artyom.redirectRecognizedTextOutput((text, isFinal) => {
+            if (isFinal) {
+                transcript.value = text;
+                const result = extractData(text);
+                order.value = result;
+                saveToDB(result);
+                artyom.say(`Uloženo. ${result.quantity} krát ${result.item}.`);
+                isListening.value = false;
+            }
+        });
 
-        recognition.onerror = () => { isListening.value = false; };
-        recognition.onend = () => { isListening.value = false; };
+        const reset = () => { order.value = null; transcript.value = ''; };
 
-        const extractOrder = (text) => {
-            const lower = text.toLowerCase();
-            
-            const phone = (text.replace(/\s/g, '').match(/\d{9}/) || ["Neuvedeno"])[0];
-            const quantity = (lower.match(/(\d+)\s*(?:x|krát|piz)/) || ["", "1"])[1];
-            const pizzaType = (lower.match(/(?:pizzu|pizzy|pizza)\s+([a-zěščřžýáíéóúů\s]+?)(?=\sna|v\s|ulici|$)/i) || ["", "Margarita"])[1];
-            const address = (lower.match(/(?:na adresu|ulici|ulice|v)\s+(.*)/i) || ["", "Osobní odběr"])[1].replace(phone, '').trim();
-
-            order.value = { item: pizzaType, quantity, address, phone };
-            
-            // Persist to IndexedDB
-            saveOrder(order.value);
-
-            // Voice Feedback
-            speak(`Rozumím. Objednávám ${quantity} krát pizzu ${pizzaType} na adresu ${address}.`);
-        };
-
-        const clearOrder = () => { order.value = null; transcript.value = ''; };
-
-        return { transcript, isListening, statusMessage, order, toggleListening, clearOrder };
+        return { transcript, isListening, order, statusMessage, toggleMic, reset };
     }
 }).mount('#app');
-                                                                                    
