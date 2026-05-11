@@ -1,47 +1,41 @@
-import { saveOrder } from './storage.js';
-import { extractOrderData } from './parser.js';
+const toggleMic = async () => {
+    // 1. Check for browser support
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        alert("Prohlížeč nepodporuje Web Speech API. Použijte Chrome.");
+        return;
+    }
 
-const { createApp, ref, onMounted } = Vue;
-const artyom = new Artyom();
+    if (isListening.value) {
+        // Force stop
+        artyom.fatality().then(() => {
+            isListening.value = false;
+        });
+    } else {
+        try {
+            // 2. Clear previous instances
+            await artyom.fatality(); 
 
-createApp({
-    setup() {
-        const transcript = ref('');
-        const isListening = ref(false);
-        const currentOrder = ref(null);
-
-        const startListening = () => {
+            // 3. Re-initialize with User Gesture
             artyom.initialize({
                 lang: "cs-CZ",
-                continuous: false,
+                continuous: false, // Set to false for cleaner recognition
                 listen: true,
                 debug: true,
                 speed: 1
             }).then(() => {
                 isListening.value = true;
-                artyom.say("Co si přejete objednat?");
+                // Voice feedback to confirm synthesis is also working
+                artyom.say("Poslouchám"); 
+                console.log("Mic active");
+            }).catch(err => {
+                console.error("Initialization error:", err);
+                if (err.code === "not-allowed") {
+                    alert("Povolte prosím mikrofon v nastavení prohlížeče.");
+                }
             });
-        };
-
-        artyom.redirectRecognizedTextOutput((text, isFinal) => {
-            if (isFinal) {
-                transcript.value = text;
-                const parsed = extractOrderData(text);
-                currentOrder.value = parsed;
-                saveOrder(parsed);
-                artyom.say(`Rozumím, pizza ${parsed.item} na adresu ${parsed.address}.`);
-                isListening.value = false;
-            }
-        });
-
-        const toggleMic = () => {
-            if (isListening.value) {
-                artyom.fatality().then(() => isListening.value = false);
-            } else {
-                startListening();
-            }
-        };
-
-        return { transcript, isListening, currentOrder, toggleMic };
+        } catch (e) {
+            console.log("Fatal error restarting engine", e);
+        }
     }
-}).mount('#app');
+};
