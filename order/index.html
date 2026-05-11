@@ -2,70 +2,101 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hlasová Objednávka 2026</title>
-    <link rel="icon" href="favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="style.css">
-    <link rel="manifest" href="manifest.json">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Hlasová Objednávka Pizzy</title>
+    
+    <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#FFD700">
+    <meta name="description" content="Hlasový asistent pro objednávku pizzy">
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- Favicon (Yellow Circle) -->
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    
+    <!-- Stylesheets (Clear CSS3) -->
+    <link rel="stylesheet" href="style.css">
+
+    <!-- External Libraries (CDNs) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/artyom.js/1.0.6/artyom.window.min.js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 </head>
 <body>
+
     <div id="app" v-cloak>
         <header role="banner">
-            <div class="logo-circle" :class="{ pulsing: isListening }"></div>
-            <h1>Pizza Voice</h1>
+            <div class="logo-container">
+                <!-- Visual state indicator for voice engine -->
+                <div class="status-circle" :class="{ 'is-active': isListening }" aria-hidden="true"></div>
+                <h1>PizzaExpress</h1>
+            </div>
         </header>
 
         <main role="main">
-            <section class="voice-section" aria-labelledby="voice-status">
-                <h2 id="voice-status">{{ statusMessage }}</h2>
+            <!-- Voice Input Section -->
+            <section class="voice-controls" aria-labelledby="voice-heading">
+                <h2 id="voice-heading" class="sr-only">Hlasové ovládání</h2>
+                
                 <button 
-                    @click="toggleListening" 
+                    @click="toggleMic" 
+                    class="mic-btn" 
                     :aria-pressed="isListening"
-                    class="mic-btn"
-                >
-                    <span v-if="!isListening">🎤 Start</span>
-                    <span v-else>🛑 Stop</span>
+                    :aria-label="isListening ? 'Zastavit poslech' : 'Spustit hlasovou objednávku'">
+                    <span v-if="!isListening" aria-hidden="true">🎤</span>
+                    <span v-else aria-hidden="true">🛑</span>
                 </button>
-                <p role="log" aria-live="polite" class="transcript">
-                    {{ transcript || 'Zde se zobrazí váš hlas...' }}
-                </p>
+
+                <div class="transcript-box" role="log" aria-live="polite">
+                    <p>{{ transcript || 'Klikněte a řekněte například: Chci dvě pizzy Hawai na adresu Dlouhá 5, telefon 777123456' }}</p>
+                </div>
             </section>
 
+            <!-- Order Results Section (Extracted from Voice) -->
             <transition name="fade">
-                <section v-if="order" class="order-result" aria-labelledby="order-title">
-                    <h2 id="order-title">Detaily objednávky</h2>
-                    <div class="card-grid">
-                        <div class="card">
-                            <label>Produkt</label>
-                            <p>{{ order.item }}</p>
+                <section v-if="currentOrder" class="order-summary" aria-labelledby="summary-heading">
+                    <h2 id="summary-heading">Vaše Objednávka</h2>
+                    
+                    <div class="order-grid" role="list">
+                        <div class="order-item" role="listitem">
+                            <span class="label">Produkt:</span>
+                            <span class="value">{{ currentOrder.item }}</span>
                         </div>
-                        <div class="card">
-                            <label>Množství</label>
-                            <p>{{ order.quantity }}x</p>
+                        <div class="order-item" role="listitem">
+                            <span class="label">Množství:</span>
+                            <span class="value">{{ currentOrder.quantity }}x</span>
                         </div>
-                        <div class="card">
-                            <label>Adresa</label>
-                            <p>{{ order.address }}</p>
+                        <div class="order-item" role="listitem">
+                            <span class="label">Adresa:</span>
+                            <span class="value">{{ currentOrder.address }}</span>
                         </div>
-                        <div class="card">
-                            <label>Telefon</label>
-                            <p>{{ order.phone }}</p>
+                        <div class="order-item" role="listitem">
+                            <span class="label">Telefon:</span>
+                            <span class="value">{{ currentOrder.phone }}</span>
                         </div>
                     </div>
-                    <button class="confirm-btn" @click="clearOrder">Nová objednávka</button>
+
+                    <button class="btn-confirm" @click="resetOrder">Nová objednávka</button>
                 </section>
             </transition>
         </main>
+
+        <footer role="contentinfo">
+            <p><small>&copy; 2026 PizzaExpress PWA. Funguje offline.</small></p>
+        </footer>
     </div>
 
-    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-    <script src="storage.js"></script>
-    <script src="app.js"></script>
+    <!-- Application Scripts -->
+    <script type="module" src="app.js"></script>
+    
+    <!-- Service Worker Registration -->
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js');
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('SW registered'))
+                    .catch(err => console.log('SW registration failed', err));
+            });
         }
     </script>
 </body>
-    </html>
+                        </html>
+                        
