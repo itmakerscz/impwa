@@ -22,8 +22,8 @@ createApp({
             if (!query) return orders.value;
 
             return orders.value.filter(order => 
-                (order.item && order.item.toLowerCase().includes(query)) ||
-                (order.address && order.address.toLowerCase().includes(query))
+                order.item?.toLowerCase().includes(query) ||
+                order.address?.toLowerCase().includes(query)
             );
         });
 

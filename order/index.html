@@ -15,6 +15,7 @@
     
     <!-- Stylesheets (Clear CSS3) -->
     <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
 
     <!-- External Libraries (CDNs) -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
@@ -24,12 +25,17 @@
     <div id="app" v-cloak>
         <header role="banner">
             <div class="logo-container">
-                <!-- Visual state indicator for voice engine -->
-                <div 
-                    class="status-circle" 
-                    :class="{ 'is-active': isListening, 'is-unavailable': !isVoiceEnabled }" 
-                    :title="isVoiceEnabled ? 'Hlasový asistent připraven' : 'Hlasový asistent nedostupný'"
-                    aria-hidden="true"></div>
+                
+                <!-- New: Speech Queue Active Indicator -->
+                <div v-if="isSpeechQueueActive" class="speech-queue-container">
+                    <div class="speech-queue-indicator" 
+                         :title="speechSynthesizerQueueLength > 0 ? 'Zprávy ve frontě (' + speechSynthesizerQueueLength + ')' : 'Asistent mluví'">
+                        <span class="material-icons-outlined">{{ speechStatusIcon }}</span>
+                    </div>
+                    <button @click="clearSpeechQueue" class="clear-queue-btn" title="Utišit a vymazat frontu">
+                        <span class="material-icons-outlined">close</span>
+                    </button>
+                </div>
                 <h1>PizzaExpress</h1>
                 <nav><a href="orders.html" class="nav-link">Moje objednávky</a></nav>
             </div>
@@ -55,8 +61,15 @@
                     class="mic-btn" 
                     :class="{ active: isListening }"
                     aria-label="Podržte pro mluvení">
-                    <span v-if="!isListening" aria-hidden="true">🎤</span>
-                    <span v-else aria-hidden="true">🛑</span>
+                    
+                    <!-- Status indicator moved here -->
+                    <div class="status-circle" 
+                        :class="{ 'is-active': isListening, 'is-unavailable': !isVoiceEnabled }" 
+                        :title="isVoiceEnabled ? 'Hlasový asistent připraven' : 'Hlasový asistent nedostupný'"
+                        aria-hidden="true"></div>
+
+                    <span v-if="!isListening" class="material-icons-outlined" aria-hidden="true">mic</span>
+                    <span v-else class="material-icons-outlined" aria-hidden="true">stop</span>
                 </button>
 
                 <div v-if="isListening" class="timer-display" aria-live="off">
@@ -68,37 +81,79 @@
                 </div>
 
                 <div class="transcript-box" role="log" aria-live="polite">
-                    <p>{{ transcript || 'Klikněte a řekněte například: Chci dvě pizzy Hawai na adresu Dlouhá 5, telefon 777123456' }}</p>
+                    <div class="caption-content">
+                        <p v-if="!transcript" class="caption-placeholder">
+                            Klikněte a řekněte například:<br>
+                            <span class="text-italic">"Chci dvě pizzy Hawai na adresu Dlouhá 5"</span>
+                        </p>
+                        <p v-else class="caption-text">
+                            {{ transcript }}
+                        </p>
+                    </div>
+                    <button v-if="isListening" @click="stopListening" class="stop-recording-btn" title="Zastavit nahrávání">
+                        <span class="material-icons-outlined">stop_circle</span>
+                    </button>
                 </div>
             </section>
 
+            <!-- Processing Spinner -->
+            <transition name="fade">
+                <div v-if="isProcessing" class="processing-container" role="status">
+                    <span class="material-icons-outlined spinner-icon">sync</span>
+                    <p>Zpracovávám hlas...</p>
+                </div>
+            </transition>
+
+            <!-- Success Notification -->
+            <transition name="fade">
+                <div v-if="showSuccessNotification" class="success-notification" role="status" aria-live="polite">
+                    <p>
+                        <span class="material-icons-outlined" style="vertical-align: middle; margin-right: 4px;">check_circle</span>
+                        Objednávka úspěšně uložena!
+                    </p>
+                </div>
+            </transition>
             <!-- Order Results Section (Extracted from Voice) -->
             <transition name="fade">
-                <section v-if="currentOrder" class="order-summary" aria-labelledby="summary-heading">
-                    <h2 id="summary-heading">Vaše Objednávka</h2>
+                <section v-if="currentOrder && isDoneSpeaking" class="order-summary" aria-labelledby="summary-heading">
+                    <h2 id="summary-heading" class="summary-header">
+                        <span>Vaše Objednávka</span>
+                        <button @click="toggleSummaryCollapse" class="collapse-toggle-btn" 
+                                :aria-expanded="!isSummaryCollapsed" 
+                                aria-controls="order-details">
+                            {{ isSummaryCollapsed ? 'Rozbalit' : 'Sbalit' }}
+                        </button>
+                    </h2>
                     
                     <div class="order-grid" role="list">
-                        <div class="order-item" role="listitem">
-                            <span class="label">Produkt:</span>
-                            <span class="value">{{ currentOrder.item }}</span>
+                        <div v-for="(pizza, index) in currentOrder.items" :key="index" class="order-item" role="listitem">
+                            <span class="label">Položka:</span>
+                            <span class="value">{{ pizza.quantity }}x {{ pizza.name }}</span>
                         </div>
-                        <div class="order-item" role="listitem">
-                            <span class="label">Množství:</span>
-                            <span class="value">{{ currentOrder.quantity }}x</span>
+                        <div v-if="currentOrder.items.length > 1" class="order-item total-highlight" role="listitem">
+                            <span class="label">Celkem:</span>
+                            <span class="value">{{ currentOrder.quantity }} ks</span>
                         </div>
                         <div class="order-item" role="listitem">
                             <span class="label">Adresa:</span>
-                            <span class="value">{{ currentOrder.address }}</span>
+                            <textarea v-model="currentOrder.address" class="value-input" rows="1" ref="addressTextarea" @input="autoResizeTextarea($event.target)" placeholder="Zadejte adresu"></textarea>
                         </div>
                         <div class="order-item" role="listitem">
                             <span class="label">Telefon:</span>
-                            <span class="value">{{ currentOrder.phone }}</span>
+                            <input type="tel" v-model="currentOrder.phone" class="value-input" placeholder="Zadejte telefon">
                         </div>
-                        <div v-if="currentOrder.toppings?.length" class="order-item" role="listitem">
+                        <div class="order-item" role="listitem">
+                            <span class="label">Čas doručení:</span>
+                            <input type="text" v-model="currentOrder.deliveryTime" class="value-input" placeholder="Např. co nejdříve nebo 18:30">
+                        </div>
+                        <div v-if="currentOrder.toppings?.length || toppingsText" class="order-item" role="listitem">
                             <span class="label">Extra:</span>
-                            <span class="value">{{ currentOrder.toppings.join(', ') }}</span>
+                            <textarea v-model="toppingsText" class="value-input" rows="1" ref="toppingsTextarea" @input="autoResizeTextarea($event.target)" placeholder="Přidejte extra přísady (např. sýr, slanina)"></textarea>
                         </div>
                     </div>
+                    <transition name="expand">
+                        <div v-show="!isSummaryCollapsed" id="order-details">
+                    </transition>
 
                     <div class="action-group">
                         <button class="btn-confirm" @click="handleConfirmOrder">Potvrdit a uložit</button>
@@ -106,6 +161,7 @@
                     </div>
                 </section>
             </transition>
+            </div> <!-- Closing div for expand transition -->
         </main>
 
         <footer role="contentinfo">
@@ -121,25 +177,8 @@
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js')
-                    .then(async reg => {
+                    .then(reg => {
                         console.log('SW registered');
-                        
-                        // Register Periodic Background Sync
-                        if ('periodicSync' in reg) {
-                            const status = await navigator.permissions.query({
-                                name: 'periodic-background-sync',
-                            });
-                            
-                            if (status.state === 'granted') {
-                                try {
-                                    await reg.periodicSync.register('update-pizza-menu', {
-                                        minInterval: 24 * 60 * 60 * 1000, // 24 hours
-                                    });
-                                } catch (err) {
-                                    console.error('Periodic sync registration failed', err);
-                                }
-                            }
-                        }
                     })
                     .catch(err => console.log('SW registration failed', err));
             });

@@ -1,13 +1,13 @@
 const DB_NAME = 'PizzaAppDB';
 const STORE_NAME = 'orders';
+const DB_VERSION = 1;
 
 let db = null;
 
-export const initDB = () => {
+const getDB = () => {
     if (db) return Promise.resolve(db);
-    
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, 1);
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
 
         request.onupgradeneeded = (e) => {
             const database = e.target.result;
@@ -16,49 +16,38 @@ export const initDB = () => {
             }
         };
 
-        request.onsuccess = () => {
-            db = request.result;
-            resolve(db);
+        request.onsuccess = () => resolve(db = request.result);
+        request.onerror = () => reject(request.error);
+    });
+};
+
+const execute = async (mode, action) => {
+    const database = await getDB();
+    return new Promise((resolve, reject) => {
+        const tx = database.transaction(STORE_NAME, mode);
+        const store = tx.objectStore(STORE_NAME);
+        const request = action(store);
+        let operationResult; // Variable to hold the result of the specific operation
+
+        request.onsuccess = (event) => {
+            operationResult = event.target.result; // Capture the result here
         };
-        request.onerror = () => reject(request.error);
+        request.onerror = (event) => reject(event.target.error); // Handle individual request errors
+
+        tx.oncomplete = () => resolve(operationResult); // Resolve with the captured result when the transaction completes
+        tx.onerror = (event) => reject(event.target.error); // Handle transaction errors
     });
 };
 
-export const saveOrder = async (order) => {
-    const database = await initDB();
-    return new Promise((resolve, reject) => {
-        const tx = database.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        
-        // Ensure the object is "plain" (strips Vue Proxies) to avoid cloning issues
-        const dataToSave = JSON.parse(JSON.stringify(order));
-        // Add status flag for Background Sync
-        store.add({ ...dataToSave, created_at: new Date().toISOString(), status: 'pending' });
-        
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
+export const saveOrder = (order) => {
+    const data = {
+        ...Vue.toRaw(order), // 2026 Best practice: use native toRaw
+        created_at: new Date().toISOString(),
+        status: 'pending'
+    };
+    return execute('readwrite', store => store.add(data));
 };
 
-export const getAllOrders = async () => {
-    const database = await initDB();
-    return new Promise((resolve, reject) => {
-        const tx = database.transaction(STORE_NAME, 'readonly');
-        const store = tx.objectStore(STORE_NAME);
-        const request = store.getAll();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-    });
-};
-
-export const deleteOrder = async (id) => {
-    const database = await initDB();
-    return new Promise((resolve, reject) => {
-        const tx = database.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        store.delete(id);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-};
+export const getAllOrders = () => execute('readonly', store => store.getAll());
+export const deleteOrder = (id) => execute('readwrite', store => store.delete(id));
                                         
