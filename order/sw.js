@@ -1,4 +1,4 @@
-const CACHE_NAME = 'v9-pizza-voice';
+const CACHE_NAME = 'v12-pizza-voice';
 const ASSETS = [
     '.',
     'index.html',
@@ -8,6 +8,8 @@ const ASSETS = [
     'app/orders.js',
     'app/storage.js',
     'app/parser.js',
+    'app/audio-processor.js',
+    'app/speech-synthesizer.js',
     'favicon.svg',
     'https://unpkg.com/vue@3/dist/vue.global.prod.js'
 ];

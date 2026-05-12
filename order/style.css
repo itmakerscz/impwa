@@ -66,15 +66,28 @@ footer { margin-top: 2rem; color: var(--text-muted); text-align: center; }
     border: 10px solid rgba(255, 215, 0, 0.2);
     font-size: 2rem;
     cursor: pointer;
-    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), background 0.2s;
     display: flex;
     align-items: center;
     justify-content: center;
+    /* Prevent long-press context menu on mobile */
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none; 
 }
 
 .mic-btn.active {
     animation: pulse 1.5s infinite;
     transform: scale(1.1);
+    background: #fff; /* Visual feedback for being pressed */
+}
+
+.timer-display {
+    font-variant-numeric: tabular-nums;
+    font-weight: bold;
+    color: var(--primary);
+    margin-top: 1rem;
 }
 
 .volume-meter {

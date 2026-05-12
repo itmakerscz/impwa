@@ -44,14 +44,24 @@
                     <p>⚠️ Hlasové ovládání není momentálně k dispozici. Zkontrolujte připojení nebo prohlížeč.</p>
                 </div>
 
+                <div v-if="lastError" class="error-banner" role="alert" style="background: rgba(244, 67, 54, 0.2); margin-top: 1rem;">
+                    <p>{{ lastError }}</p>
+                </div>
+
                 <button 
-                    @click="toggleMic" 
+                    @pointerdown="handlePressStart"
+                    @pointerup="handlePressEnd"
+                    @pointerleave="handlePressEnd"
                     class="mic-btn" 
-                    :aria-pressed="isListening"
-                    :aria-label="isListening ? 'Zastavit poslech' : 'Spustit hlasovou objednávku'">
+                    :class="{ active: isListening }"
+                    aria-label="Podržte pro mluvení">
                     <span v-if="!isListening" aria-hidden="true">🎤</span>
                     <span v-else aria-hidden="true">🛑</span>
                 </button>
+
+                <div v-if="isListening" class="timer-display" aria-live="off">
+                    {{ formatTime(recordingTime) }}
+                </div>
 
                 <div class="volume-meter" v-if="isListening" aria-hidden="true">
                     <div class="volume-bar" :style="{ width: volumeLevel + '%' }"></div>
