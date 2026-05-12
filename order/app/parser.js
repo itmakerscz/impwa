@@ -18,7 +18,8 @@ export const extractOrderData = (text) => {
     // Improved item extraction (less greedy lookahead)
     const itemMatch = raw.match(/(?:pizzu|pizza|pizzy)\s+([a-zěščřžýáíéóúů\s]+?)(?=\sna|v\s|u\s|do|ulici|adresa|telefon|číslo|$)/i);
     const itemRaw = itemMatch ? itemMatch[1].trim() : "margarita";
-    const item = itemRaw.charAt(0).toUpperCase() + itemRaw.slice(1);
+    // Capitalize each word for complex names (e.g., Quattro Formaggi)
+    const item = itemRaw.split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 
     // Better address boundary detection (stops before phone or pizza keywords)
     const addressMatch = raw.match(/(?:na adresu|ulici|v\s|do\s)\s*(.+?)(?=\s(?:pizz|telefon|číslo|kontakt|mobil|je to|$))/i);

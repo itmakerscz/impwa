@@ -8,6 +8,12 @@ createApp({
         const isListening = ref(false);
         const transcript = ref("");
         const currentOrder = ref(null);
+        const volumeLevel = ref(0);
+
+        let audioCtx = null;
+        let analyser = null;
+        let micStream = null;
+        let animationId = null;
         
         // Native Web Speech API initialization
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -21,7 +27,24 @@ createApp({
             recognition.lang = 'cs-CZ';
 
             recognition.onstart = () => { isListening.value = true; };
-            recognition.onend = () => { isListening.value = false; };
+            
+            recognition.onend = () => { 
+                // Mobile Chrome specific: restart if user didn't manually stop
+                if (isListening.value) {
+                    try {
+                        recognition.start();
+                    } catch (e) {
+                        console.error("Restart failed:", e);
+                        isListening.value = false;
+                    }
+                }
+            };
+
+            recognition.onerror = (event) => {
+                console.error("Speech Recognition Error:", event.error);
+                if (event.error === 'not-allowed') isListening.value = false;
+                if (event.error === 'aborted') isListening.value = false;
+            };
 
             recognition.onresult = (event) => {
                 let interimTranscript = '';
@@ -37,6 +60,36 @@ createApp({
                 }
             };
         }
+
+        const startVisualizer = async () => {
+            try {
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+                const source = audioCtx.createMediaStreamSource(micStream);
+                source.connect(analyser);
+                analyser.fftSize = 64;
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                const update = () => {
+                    if (!isListening.value) return;
+                    analyser.getByteFrequencyData(dataArray);
+                    const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                    volumeLevel.value = Math.min(100, average * 1.5);
+                    animationId = requestAnimationFrame(update);
+                };
+                update();
+            } catch (err) {
+                console.warn("Visualizer error", err);
+            }
+        };
+
+        const stopVisualizer = () => {
+            if (animationId) cancelAnimationFrame(animationId);
+            if (micStream) micStream.getTracks().forEach(t => t.stop());
+            if (audioCtx) audioCtx.close();
+            volumeLevel.value = 0;
+        };
 
         const speak = (text) => {
             if (!window.speechSynthesis) return;
@@ -73,6 +126,8 @@ createApp({
             }
 
             if (isListening.value) {
+                isListening.value = false; // Set to false first to prevent onend restart
+                stopVisualizer();
                 recognition.stop();
             } else {
                 try {
@@ -83,10 +138,14 @@ createApp({
                             return;
                         }
                     }
-                    recognition.start();
+                    
+                    // On mobile, speak then start to avoid hardware conflicts
                     speak("Poslouchám");
+                    setTimeout(() => {
+                        recognition.start();
+                    }, 500);
                 } catch (e) {
-                    recognition.start();
+                    console.error("ToggleMic error:", e);
                 }
             }
         };
@@ -120,9 +179,11 @@ createApp({
         const resetOrder = () => {
             currentOrder.value = null;
             transcript.value = "";
-            if (isListening.value) recognition.stop();
+            isListening.value = false;
+            stopVisualizer();
+            if (recognition) recognition.stop();
         };
 
-        return { toggleMic, isListening, transcript, currentOrder, resetOrder, handleConfirmOrder, isVoiceEnabled };
+        return { toggleMic, isListening, transcript, currentOrder, resetOrder, handleConfirmOrder, isVoiceEnabled, volumeLevel };
     }
 }).mount('#app');

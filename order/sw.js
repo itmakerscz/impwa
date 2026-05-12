@@ -1,5 +1,4 @@
-const CACHE_NAME = 'v7-pizza-voice';
-const CACHE_NAME = 'v8-pizza-voice';
+const CACHE_NAME = 'v9-pizza-voice';
 const ASSETS = [
     '.',
     'index.html',

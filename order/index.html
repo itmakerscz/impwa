@@ -53,6 +53,10 @@
                     <span v-else aria-hidden="true">🛑</span>
                 </button>
 
+                <div class="volume-meter" v-if="isListening" aria-hidden="true">
+                    <div class="volume-bar" :style="{ width: volumeLevel + '%' }"></div>
+                </div>
+
                 <div class="transcript-box" role="log" aria-live="polite">
                     <p>{{ transcript || 'Klikněte a řekněte například: Chci dvě pizzy Hawai na adresu Dlouhá 5, telefon 777123456' }}</p>
                 </div>
