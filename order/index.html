@@ -107,8 +107,35 @@
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js')
-                    .then(reg => console.log('SW registered'))
+                    .then(async reg => {
+                        console.log('SW registered');
+                        
+                        // Register Periodic Background Sync
+                        if ('periodicSync' in reg) {
+                            const status = await navigator.permissions.query({
+                                name: 'periodic-background-sync',
+                            });
+                            
+                            if (status.state === 'granted') {
+                                try {
+                                    await reg.periodicSync.register('update-pizza-menu', {
+                                        minInterval: 24 * 60 * 60 * 1000, // 24 hours
+                                    });
+                                } catch (err) {
+                                    console.error('Periodic sync registration failed', err);
+                                }
+                            }
+                        }
+                    })
                     .catch(err => console.log('SW registration failed', err));
+            });
+
+            let refreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!refreshing) {
+                    window.location.reload();
+                    refreshing = true;
+                }
             });
         }
     </script>

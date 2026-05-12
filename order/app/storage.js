@@ -32,7 +32,8 @@ export const saveOrder = async (order) => {
         
         // Ensure the object is "plain" (strips Vue Proxies) to avoid cloning issues
         const dataToSave = JSON.parse(JSON.stringify(order));
-        store.add({ ...dataToSave, created_at: new Date().toISOString() });
+        // Add status flag for Background Sync
+        store.add({ ...dataToSave, created_at: new Date().toISOString(), status: 'pending' });
         
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);

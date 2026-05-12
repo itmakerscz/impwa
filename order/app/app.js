@@ -98,6 +98,17 @@ createApp({
                 const plainOrder = JSON.parse(JSON.stringify(currentOrder.value));
                 plainOrder.rawText = transcript.value;
                 await saveOrder(plainOrder);
+
+                // Register Background Sync if supported
+                if ('serviceWorker' in navigator && 'SyncManager' in window) {
+                    const reg = await navigator.serviceWorker.ready;
+                    try {
+                        await reg.sync.register('sync-orders');
+                    } catch (err) {
+                        console.warn("Background sync registration failed", err);
+                    }
+                }
+
                 speak("Objednávka byla uložena.");
                 resetOrder();
             } catch (err) {
