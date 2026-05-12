@@ -72,6 +72,10 @@
                             <span class="label">Telefon:</span>
                             <span class="value">{{ currentOrder.phone }}</span>
                         </div>
+                        <div v-if="currentOrder.toppings?.length" class="order-item" role="listitem">
+                            <span class="label">Extra:</span>
+                            <span class="value">{{ currentOrder.toppings.join(', ') }}</span>
+                        </div>
                     </div>
 
                     <button class="btn-confirm" @click="resetOrder">Nová objednávka</button>

@@ -13,5 +13,5 @@ export const extractOrderData = (text) => {
     const addressMatch = raw.match(/(?:na adresu|ulici|v|do)\s+(.*)/i);
     const address = addressMatch ? addressMatch[1].replace(phone, '').trim() : "Osobní odběr";
 
-    return { item: `Pizza ${item}`, quantity, address, phone };
+    return { item: `Pizza ${item}`, quantity, address, phone, toppings: [] };
 };
