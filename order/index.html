@@ -17,7 +17,6 @@
     <link rel="stylesheet" href="style.css">
 
     <!-- External Libraries (CDNs) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/artyom.js/1.0.6/artyom.window.min.js"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 </head>
 <body>
@@ -26,8 +25,13 @@
         <header role="banner">
             <div class="logo-container">
                 <!-- Visual state indicator for voice engine -->
-                <div class="status-circle" :class="{ 'is-active': isListening }" aria-hidden="true"></div>
+                <div 
+                    class="status-circle" 
+                    :class="{ 'is-active': isListening, 'is-unavailable': !isVoiceEnabled }" 
+                    :title="isVoiceEnabled ? 'Hlasový asistent připraven' : 'Hlasový asistent nedostupný'"
+                    aria-hidden="true"></div>
                 <h1>PizzaExpress</h1>
+                <nav><a href="orders.html" class="nav-link">Moje objednávky</a></nav>
             </div>
         </header>
 
@@ -36,6 +40,10 @@
             <section class="voice-controls" aria-labelledby="voice-heading">
                 <h2 id="voice-heading" class="sr-only">Hlasové ovládání</h2>
                 
+                <div v-if="!isVoiceEnabled" class="error-banner" role="alert">
+                    <p>⚠️ Hlasové ovládání není momentálně k dispozici. Zkontrolujte připojení nebo prohlížeč.</p>
+                </div>
+
                 <button 
                     @click="toggleMic" 
                     class="mic-btn" 
@@ -78,7 +86,10 @@
                         </div>
                     </div>
 
-                    <button class="btn-confirm" @click="resetOrder">Nová objednávka</button>
+                    <div class="action-group">
+                        <button class="btn-confirm" @click="handleConfirmOrder">Potvrdit a uložit</button>
+                        <button class="btn-secondary" @click="resetOrder">Zrušit</button>
+                    </div>
                 </section>
             </transition>
         </main>
@@ -89,7 +100,7 @@
     </div>
 
     <!-- Application Scripts -->
-    <script type="module" src="app.js"></script>
+    <script type="module" src="app/app.js"></script>
     
     <!-- Service Worker Registration -->
     <script>

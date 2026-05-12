@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Historie Objednávek</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+</head>
+<body>
+    <div id="app" v-cloak>
+        <header role="banner">
+            <div class="logo-container">
+                <h1>PizzaExpress</h1>
+                <nav><a href="index.html" class="nav-link">Zpět na objednávku</a></nav>
+            </div>
+        </header>
+
+        <main role="main">
+            <section class="order-summary">
+                <h2>Historie objednávek</h2>
+                
+                <div class="search-container" style="margin-bottom: 1.5rem;">
+                    <input 
+                        v-model="searchQuery" 
+                        type="text" 
+                        placeholder="Hledat podle pizzy nebo adresy..." 
+                        class="search-input"
+                    >
+                </div>
+
+                <div v-if="filteredOrders.length === 0" class="transcript-box">
+                    <p>{{ orders.length === 0 ? 'Zatím nemáte žádné uložené objednávky.' : 'Nebyly nalezeny žádné odpovídající objednávky.' }}</p>
+                </div>
+
+                <div v-for="order in filteredOrders" :key="order.id" class="saved-order-item">
+                    <div class="order-item">
+                        <span class="label">Datum:</span>
+                        <span class="value">{{ new Date(order.created_at).toLocaleString('cs-CZ') }}</span>
+                    </div>
+                    <div class="order-item">
+                        <span class="label">Produkt:</span>
+                        <span class="value">{{ order.item }} ({{ order.quantity }}x)</span>
+                    </div>
+                    <div class="order-item" v-if="order.toppings?.length">
+                        <span class="label">Extra:</span>
+                        <span class="value">{{ order.toppings.join(', ') }}</span>
+                    </div>
+                    <div class="order-item">
+                        <span class="label">Adresa:</span>
+                        <span class="value">{{ order.address }}</span>
+                    </div>
+                    <div class="order-item" v-if="order.rawText">
+                        <span class="label">Text hlasu:</span>
+                        <span class="value raw-transcript">"{{ order.rawText }}"</span>
+                    </div>
+                    <button class="btn-secondary" @click="removeOrder(order.id)" style="margin-top: 1rem; background: rgba(244, 67, 54, 0.2); color: #ff8a80;">
+                        Smazat záznam
+                    </button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script type="module" src="app/orders.js"></script>
+</body>
+</html>

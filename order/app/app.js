@@ -1,3 +1,10 @@
+import { extractOrderData } from './parser.js';
+import { saveOrder } from './storage.js';
+
+const { createApp, ref } = Vue;
+
+createApp({
+    setup() {
         const isListening = ref(false);
         const transcript = ref("");
         const currentOrder = ref(null);
@@ -87,7 +94,10 @@
         const handleConfirmOrder = async () => {
             if (!currentOrder.value) return;
             try {
-                await saveOrder(currentOrder.value);
+                // Convert reactive Proxy to a plain object to prevent DataCloneError in IndexedDB
+                const plainOrder = JSON.parse(JSON.stringify(currentOrder.value));
+                plainOrder.rawText = transcript.value;
+                await saveOrder(plainOrder);
                 speak("Objednávka byla uložena.");
                 resetOrder();
             } catch (err) {

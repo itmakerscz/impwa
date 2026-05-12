@@ -1,12 +1,15 @@
-const CACHE_NAME = 'v2-pizza-voice';
+const CACHE_NAME = 'v4-pizza-voice';
 const ASSETS = [
-    '/',
-    '/index.html',
-    '/style.css',
-    '/app.js',
-    '/storage.js',
-    '/parser.js',
-    '/favicon.svg'
+    '.',
+    'index.html',
+    'orders.html',
+    'style.css',
+    'app/app.js',
+    'app/orders.js',
+    'app/storage.js',
+    'app/parser.js',
+    'favicon.svg',
+    'https://unpkg.com/vue@3/dist/vue.global.prod.js'
 ];
 
 self.addEventListener('install', (e) => {
