@@ -171,7 +171,9 @@ createApp({
         };
 
         // Unified Watcher for auto-resizing - covers voice input and manual edits
-        watch([() => currentOrder.value?.address, toppingsText, transcript], updateTextareaHeights);
+        watch([() => currentOrder.value?.address, toppingsText, transcript], () => {
+            updateTextareaHeights();
+        }, { immediate: true });
 
         const handleManualProcess = () => {
             if (!transcript.value) return;

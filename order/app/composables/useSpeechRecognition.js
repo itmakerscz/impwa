@@ -99,20 +99,21 @@ export function useSpeechRecognition(onFinalResultCallback) {
         };
 
         recognition.onresult = (event) => {
-            let sessionTranscript = "";
-            for (let i = 0; i < event.results.length; ++i) {
-                sessionTranscript += event.results[i][0].transcript;
-            }
-            
-            // Spojíme text z minulých restartů s aktuálním textem této session
-            transcript.value = (baseTranscript + " " + sessionTranscript).trim();
-
-            // Trigger the callback only for newly completed final segments
+            let interimTranscript = "";
             for (let i = event.resultIndex; i < event.results.length; ++i) {
+                const resultText = event.results[i][0].transcript;
                 if (event.results[i].isFinal) {
-                    onFinalResultCallback(event.results[i][0].transcript.trim().toLowerCase());
+                    baseTranscript = (baseTranscript + " " + resultText).trim();
+                    onFinalResultCallback(resultText.trim().toLowerCase());
+                } else {
+                    interimTranscript += resultText;
                 }
             }
+
+            // Okamžitá aktualizace pro UI
+            transcript.value = (baseTranscript + " " + interimTranscript).trim();
+            console.log("[Speech] Live update:", transcript.value);
+
         };
     }
 
