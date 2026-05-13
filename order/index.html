@@ -181,6 +181,28 @@
             </transition>
         </main>
 
+        <!-- Mobile Debug Overlay -->
+        <button @click="showDebugPanel = !showDebugPanel" class="debug-btn" title="Toggle Debug Logs">
+            <span class="material-icons-outlined">bug_report</span>
+        </button>
+
+        <transition name="fade">
+            <div v-if="showDebugPanel" class="debug-overlay">
+                <div class="debug-header">
+                    <span>Console Logs ({{ debugLogs.length }})</span>
+                    <div class="debug-actions">
+                        <button @click="clearLogs">Smazat</button>
+                        <button @click="showDebugPanel = false">Zavřít</button>
+                    </div>
+                </div>
+                <div class="debug-body">
+                    <div v-for="log in debugLogs" :key="log.id" :class="'log-entry log-' + log.type">
+                        <small>[{{ log.time }}]</small> {{ log.message }}
+                    </div>
+                </div>
+            </div>
+        </transition>
+
         <footer role="contentinfo">
             <p><small>&copy; 2026 PizzaExpress PWA. Funguje offline.</small></p>
         </footer>

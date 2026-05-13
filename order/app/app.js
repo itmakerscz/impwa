@@ -22,6 +22,43 @@ createApp({
     setup() {
         const isDoneSpeaking = ref(false);
         const isProcessing = ref(false);
+        const debugLogs = ref([]);
+        const showDebugPanel = ref(false);
+
+        // Proxy console for mobile debugging
+        const initConsoleProxy = () => {
+            const types = ['log', 'warn', 'error'];
+            types.forEach(type => {
+                const original = console[type];
+                console[type] = (...args) => {
+                    original.apply(console, args);
+                    const message = args.map(arg => {
+                        try {
+                            return typeof arg === 'object' ? JSON.stringify(arg) : String(arg);
+                        } catch (e) { return '[Complex Object]'; }
+                    }).join(' ');
+                    
+                    debugLogs.value.push({
+                        id: Date.now() + Math.random(),
+                        type,
+                        message,
+                        time: new Date().toLocaleTimeString()
+                    });
+                    if (debugLogs.value.length > 100) debugLogs.value.shift();
+                };
+            });
+
+            window.onerror = (msg, url, lineNo, columnNo, error) => {
+                console.error(`Global Error: ${msg} at ${lineNo}:${columnNo}`);
+            };
+
+            window.onunhandledrejection = (event) => {
+                console.error(`Promise Rejection: ${event.reason}`);
+            };
+        };
+
+        initConsoleProxy();
+
         const addressTextarea = ref(null);
         const toppingsTextarea = ref(null);
         const captionTextarea = ref(null);
@@ -243,7 +280,10 @@ createApp({
             showUndoNotification,
             lastDeletedNickname,
             updateAvailable,
-            refreshApp
+            refreshApp,
+            debugLogs,
+            showDebugPanel,
+            clearLogs: () => { debugLogs.value = []; }
         };
     }
 }).mount('#app');
