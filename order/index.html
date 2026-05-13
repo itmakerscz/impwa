@@ -189,14 +189,20 @@
         <transition name="fade">
             <div v-if="showDebugPanel" class="debug-overlay">
                 <div class="debug-header">
-                    <span>Console Logs ({{ debugLogs.length }})</span>
+                    <div class="debug-filters">
+                        <button @click="logFilter = 'all'" :class="{active: logFilter === 'all'}">Vše</button>
+                        <button @click="logFilter = 'error'" :class="{active: logFilter === 'error'}">Chyby</button>
+                        <button @click="logFilter = 'warn'" :class="{active: logFilter === 'warn'}">Varování</button>
+                    </div>
                     <div class="debug-actions">
+                        <button @click="copyLogs" title="Kopírovat vše">Copy</button>
                         <button @click="clearLogs">Smazat</button>
                         <button @click="showDebugPanel = false">Zavřít</button>
                     </div>
                 </div>
                 <div class="debug-body">
-                    <div v-for="log in debugLogs" :key="log.id" :class="'log-entry log-' + log.type">
+                    <div v-if="filteredLogs.length === 0" style="text-align:center; padding: 2rem; color: var(--text-muted)">Žádné záznamy</div>
+                    <div v-for="log in filteredLogs" :key="log.id" :class="'log-entry log-' + log.type">
                         <small>[{{ log.time }}]</small> {{ log.message }}
                     </div>
                 </div>

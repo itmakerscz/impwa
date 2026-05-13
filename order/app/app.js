@@ -22,8 +22,9 @@ createApp({
     setup() {
         const isDoneSpeaking = ref(false);
         const isProcessing = ref(false);
-        const debugLogs = ref([]);
+        const debugLogs = ref(JSON.parse(localStorage.getItem('pwa_debug_logs') || '[]'));
         const showDebugPanel = ref(false);
+        const logFilter = ref('all');
 
         // Proxy console for mobile debugging
         const initConsoleProxy = () => {
@@ -45,6 +46,7 @@ createApp({
                         time: new Date().toLocaleTimeString()
                     });
                     if (debugLogs.value.length > 100) debugLogs.value.shift();
+                    localStorage.setItem('pwa_debug_logs', JSON.stringify(debugLogs.value));
                 };
             });
 
@@ -106,6 +108,20 @@ createApp({
             // If items are waiting, show the loudspeaker, otherwise the standard speaker
             return speechSynthesizerQueueLength.value > 0 ? 'campaign' : 'volume_up';
         });
+
+        const filteredLogs = computed(() => {
+            if (logFilter.value === 'all') return debugLogs.value;
+            return debugLogs.value.filter(l => l.type === logFilter.value);
+        });
+
+        const copyLogs = () => {
+            const text = debugLogs.value.map(l => `[${l.time}] [${l.type.toUpperCase()}] ${l.message}`).join('\n');
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Logy zkopírovány do schránky.');
+            }).catch(err => {
+                console.error('Copy failed', err);
+            });
+        };
 
         const isSpeechQueueActive = computed(() => {
             return isSpeechSynthesizerSpeaking.value || speechSynthesizerQueueLength.value > 0;
@@ -281,9 +297,12 @@ createApp({
             lastDeletedNickname,
             updateAvailable,
             refreshApp,
-            debugLogs,
+            debugLogs, // Still expose for direct access if needed, though filteredLogs is used in UI
+            filteredLogs,
+            logFilter,
             showDebugPanel,
-            clearLogs: () => { debugLogs.value = []; }
+            copyLogs,
+            clearLogs: () => { debugLogs.value = []; localStorage.removeItem('pwa_debug_logs'); }
         };
     }
 }).mount('#app');
