@@ -21,12 +21,16 @@ export function useSpeechRecognition(onFinalResultCallback) {
     const volumeLevel = ref(0);
     const recordingTime = ref(0);
     const lastError = ref("");
+    const intentActive = ref(false); // Sleduje, zda uživatel skutečně chce nahrávat
 
     const errorToast = useNotification();
 
     // Reactive state for SpeechSynthesizer status
     const isSpeechSynthesizerSpeaking = ref(false);
     const speechSynthesizerQueueLength = ref(0);
+
+    // Internal buffer for text recognized in previous "sessions" on mobile
+    let baseTranscript = "";
 
     const audioProcessor = new AudioProcessor(); // Keep this
     const speechSynthesizer = new SpeechSynthesizer(
@@ -48,8 +52,8 @@ export function useSpeechRecognition(onFinalResultCallback) {
 
         recognition.onstart = () => {
             isListening.value = true;
-            if (navigator.vibrate) navigator.vibrate(50); // Haptic feedback on start
             lastError.value = ""; 
+            if (navigator.vibrate) navigator.vibrate(50); // Haptic feedback on start
             errorToast.dismiss(); // Clear previous errors from UI
             if (!timerInterval) {
                 recordingTime.value = 0; // Reset timer on start
@@ -63,13 +67,23 @@ export function useSpeechRecognition(onFinalResultCallback) {
         };
 
         recognition.onend = () => {
-            isListening.value = false;
-            clearInterval(timerInterval);
-            timerInterval = null;
-            audioProcessor.stop();
-            volumeLevel.value = 0;
-            console.log("Recognition ended.");
-            if (navigator.vibrate) navigator.vibrate(10); // Haptic feedback on end
+            // Pokud rozpoznávání skončilo, ale uživatel ho ručně nezastavil (intentActive),
+            // restartujeme ho. To řeší problém s timeoutem na Androidu.
+            if (intentActive.value) {
+                console.log("Mobile timeout detected, auto-restarting...");
+                baseTranscript = transcript.value; // Uložíme aktuální text jako základ pro další session
+                try {
+                    recognition.start();
+                } catch (e) { console.error("Auto-restart failed", e); }
+            } else {
+                isListening.value = false;
+                clearInterval(timerInterval);
+                timerInterval = null;
+                audioProcessor.stop();
+                volumeLevel.value = 0;
+                console.log("Recognition ended by user.");
+                if (navigator.vibrate) navigator.vibrate(10);
+            }
         };
 
         recognition.onerror = (event) => {
@@ -78,20 +92,20 @@ export function useSpeechRecognition(onFinalResultCallback) {
             errorToast.trigger(8000); // Errors persist longer to ensure they are read
 
             if (['not-allowed', 'audio-capture'].includes(event.error)) {
-                isListening.value = false;
-                audioProcessor.stop();
-                volumeLevel.value = 0;
+                stopListening();
             }
             clearInterval(timerInterval);
             timerInterval = null;
         };
 
         recognition.onresult = (event) => {
-            let fullTranscript = "";
+            let sessionTranscript = "";
             for (let i = 0; i < event.results.length; ++i) {
-                fullTranscript += event.results[i][0].transcript;
+                sessionTranscript += event.results[i][0].transcript;
             }
-            transcript.value = fullTranscript;
+            
+            // Spojíme text z minulých restartů s aktuálním textem této session
+            transcript.value = (baseTranscript + " " + sessionTranscript).trim();
 
             // Trigger the callback only for newly completed final segments
             for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -110,6 +124,8 @@ export function useSpeechRecognition(onFinalResultCallback) {
         if (isListening.value) return false;
 
         try {
+            intentActive.value = true;
+            baseTranscript = ""; // Nový start - vyčistit základ
             if (navigator.permissions?.query) {
                 const res = await navigator.permissions.query({ name: 'microphone' });
                 if (res.state === 'denied') {
@@ -131,6 +147,7 @@ export function useSpeechRecognition(onFinalResultCallback) {
 
     const stopListening = () => {
         if (!isListening.value) return;
+        intentActive.value = false; // Nastavíme, že uživatel chce opravdu končit
         recognition.stop();
         // onend will handle audioProcessor.stop() and timer cleanup
     };
