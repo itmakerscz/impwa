@@ -1,6 +1,7 @@
 const DB_NAME = 'PizzaAppDB';
 const STORE_NAME = 'orders';
-const DB_VERSION = 1;
+const DICTIONARY_STORE = 'dictionary';
+const DB_VERSION = 2;
 
 let db = null;
 
@@ -14,6 +15,9 @@ const getDB = () => {
             if (!database.objectStoreNames.contains(STORE_NAME)) {
                 database.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
             }
+            if (!database.objectStoreNames.contains(DICTIONARY_STORE)) {
+                database.createObjectStore(DICTIONARY_STORE, { keyPath: 'nickname' });
+            }
         };
 
         request.onsuccess = () => resolve(db = request.result);
@@ -21,13 +25,13 @@ const getDB = () => {
     });
 };
 
-const execute = async (mode, action) => {
+const execute = async (storeName, mode, action) => {
     const database = await getDB();
     return new Promise((resolve, reject) => {
-        const tx = database.transaction(STORE_NAME, mode);
-        const store = tx.objectStore(STORE_NAME);
+        const tx = database.transaction(storeName, mode);
+        const store = tx.objectStore(storeName);
         const request = action(store);
-        let operationResult; // Variable to hold the result of the specific operation
+        let operationResult;
 
         request.onsuccess = (event) => {
             operationResult = event.target.result; // Capture the result here
@@ -41,13 +45,17 @@ const execute = async (mode, action) => {
 
 export const saveOrder = (order) => {
     const data = {
-        ...Vue.toRaw(order), // 2026 Best practice: use native toRaw
+        ...order,
         created_at: new Date().toISOString(),
         status: 'pending'
     };
-    return execute('readwrite', store => store.add(data));
+    return execute(STORE_NAME, 'readwrite', store => store.add(data));
 };
 
-export const getAllOrders = () => execute('readonly', store => store.getAll());
-export const deleteOrder = (id) => execute('readwrite', store => store.delete(id));
+export const getAllOrders = () => execute(STORE_NAME, 'readonly', store => store.getAll());
+export const deleteOrder = (id) => execute(STORE_NAME, 'readwrite', store => store.delete(id));
+
+export const saveNickname = (nickname, pizzaName) => execute(DICTIONARY_STORE, 'readwrite', store => store.put({ nickname: nickname.toLowerCase(), pizzaName }));
+export const getDictionary = () => execute(DICTIONARY_STORE, 'readonly', store => store.getAll());
+export const deleteNickname = (nickname) => execute(DICTIONARY_STORE, 'readwrite', store => store.delete(nickname.toLowerCase()));
                                         

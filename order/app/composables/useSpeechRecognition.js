@@ -1,5 +1,6 @@
 import { AudioProcessor } from '../audio-processor.js';
 import { SpeechSynthesizer } from '../speech-synthesizer.js';
+import { useNotification } from './useNotification.js';
 
 const { ref, onUnmounted } = Vue;
 
@@ -20,10 +21,19 @@ export function useSpeechRecognition(onFinalResultCallback) {
     const volumeLevel = ref(0);
     const recordingTime = ref(0);
     const lastError = ref("");
-    const isPTTActive = ref(false); // Push-to-Talk active state
 
-    const audioProcessor = new AudioProcessor();
-    const speechSynthesizer = new SpeechSynthesizer();
+    const errorToast = useNotification();
+
+    // Reactive state for SpeechSynthesizer status
+    const isSpeechSynthesizerSpeaking = ref(false);
+    const speechSynthesizerQueueLength = ref(0);
+
+    const audioProcessor = new AudioProcessor(); // Keep this
+    const speechSynthesizer = new SpeechSynthesizer(
+        'cs-CZ',
+        (speaking) => isSpeechSynthesizerSpeaking.value = speaking,
+        (queueLength) => speechSynthesizerQueueLength.value = queueLength
+    );
 
     let recognition = null;
     let timerInterval = null;
@@ -38,7 +48,9 @@ export function useSpeechRecognition(onFinalResultCallback) {
 
         recognition.onstart = () => {
             isListening.value = true;
-            lastError.value = ""; // Clear previous errors
+            if (navigator.vibrate) navigator.vibrate(50); // Haptic feedback on start
+            lastError.value = ""; 
+            errorToast.dismiss(); // Clear previous errors from UI
             if (!timerInterval) {
                 recordingTime.value = 0; // Reset timer on start
                 timerInterval = setInterval(() => {
@@ -51,36 +63,22 @@ export function useSpeechRecognition(onFinalResultCallback) {
         };
 
         recognition.onend = () => {
-            // Only restart if we are in Push-to-Talk mode AND the user is still holding the button
-            if (isPTTActive.value) {
-                try {
-                    // Small delay to prevent overlap errors on rapid restarts
-                    setTimeout(() => {
-                        if (isPTTActive.value) recognition.start();
-                    }, 100);
-                    return; // Keep visualizer and timer alive
-                } catch (e) {
-                    console.error("Recognition restart failed:", e);
-                    isListening.value = false;
-                    isPTTActive.value = false;
-                }
-            } else {
-                isListening.value = false;
-                clearInterval(timerInterval);
-                timerInterval = null;
-                audioProcessor.stop();
-                volumeLevel.value = 0;
-                console.log("Recognition ended naturally.");
-            }
+            isListening.value = false;
+            clearInterval(timerInterval);
+            timerInterval = null;
+            audioProcessor.stop();
+            volumeLevel.value = 0;
+            console.log("Recognition ended.");
+            if (navigator.vibrate) navigator.vibrate(10); // Haptic feedback on end
         };
 
         recognition.onerror = (event) => {
             console.error(`Speech Recognition Error (${event.error}):`, event);
             lastError.value = ERROR_MESSAGES[event.error] || `Chyba: ${event.error}`;
+            errorToast.trigger(8000); // Errors persist longer to ensure they are read
 
             if (['not-allowed', 'audio-capture'].includes(event.error)) {
                 isListening.value = false;
-                isPTTActive.value = false;
                 audioProcessor.stop();
                 volumeLevel.value = 0;
             }
@@ -109,38 +107,31 @@ export function useSpeechRecognition(onFinalResultCallback) {
             alert("Hlasové ovládání není podporováno v tomto prohlížeči.");
             return false;
         }
-        if (isPTTActive.value) return false; // Already active
+        if (isListening.value) return false;
 
-        isPTTActive.value = true;
-        
         try {
-            if (navigator.vibrate) navigator.vibrate(50); // Haptic feedback
-
             if (navigator.permissions?.query) {
                 const res = await navigator.permissions.query({ name: 'microphone' });
                 if (res.state === 'denied') {
                     lastError.value = "Přístup k mikrofonu je zakázán. Povolte jej v nastavení prohlížeče.";
-                    isPTTActive.value = false;
+                    errorToast.trigger(8000);
                     return false;
                 }
             }
             
             recognition.start();
-            speechSynthesizer.speak("Poslouchám");
             return true;
         } catch (e) {
             console.error("Mic start error:", e);
             lastError.value = "Nepodařilo se spustit mikrofon.";
-            isPTTActive.value = false;
+            errorToast.trigger(8000);
             return false;
         }
     };
 
     const stopListening = () => {
-        if (!isPTTActive.value) return;
-        isPTTActive.value = false;
-        if (recognition) recognition.stop();
-        if (navigator.vibrate) navigator.vibrate(10);
+        if (!isListening.value) return;
+        recognition.stop();
         // onend will handle audioProcessor.stop() and timer cleanup
     };
 
@@ -162,10 +153,12 @@ export function useSpeechRecognition(onFinalResultCallback) {
         volumeLevel,
         recordingTime,
         lastError,
-        isPTTActive,
+        showErrorNotification: errorToast.isVisible,
         isVoiceEnabled,
         startListening,
         stopListening,
-        speechSynthesizer // Expose for speaking responses
+        speechSynthesizer, // Expose for speaking responses (and direct access to queue/isSpeaking if needed, though reactive refs are better)
+        isSpeechSynthesizerSpeaking, // New: Expose reactive speaking status
+        speechSynthesizerQueueLength // New: Expose reactive queue length
     };
 }

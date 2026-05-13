@@ -42,6 +42,16 @@
         </header>
 
         <main role="main">
+            <!-- Update Notification Banner -->
+            <transition name="fade">
+                <div v-if="updateAvailable" class="update-banner" role="alert">
+                    <p>Nová verze aplikace je k dispozici!</p>
+                    <button @click="refreshApp" class="btn-confirm" style="padding: 0.5rem 1rem; font-size: 0.8rem;">
+                        Aktualizovat
+                    </button>
+                </div>
+            </transition>
+
             <!-- Voice Input Section -->
             <section class="voice-controls" aria-labelledby="voice-heading">
                 <h2 id="voice-heading" class="sr-only">Hlasové ovládání</h2>
@@ -55,18 +65,11 @@
                 </div>
 
                 <button 
-                    @pointerdown="handlePressStart"
-                    @pointerup="handlePressEnd"
-                    @pointerleave="handlePressEnd"
+                    @click="toggleRecording"
                     class="mic-btn" 
-                    :class="{ active: isListening }"
-                    aria-label="Podržte pro mluvení">
-                    
-                    <!-- Status indicator moved here -->
-                    <div class="status-circle" 
-                        :class="{ 'is-active': isListening, 'is-unavailable': !isVoiceEnabled }" 
-                        :title="isVoiceEnabled ? 'Hlasový asistent připraven' : 'Hlasový asistent nedostupný'"
-                        aria-hidden="true"></div>
+                    :class="{ 'recording': isListening, 'processing': isProcessing, 'disabled': !isVoiceEnabled }"
+                    :disabled="!isVoiceEnabled"
+                    :aria-label="isListening ? 'Zastavit nahrávání' : 'Začít mluvit'">
 
                     <span v-if="!isListening" class="material-icons-outlined" aria-hidden="true">mic</span>
                     <span v-else class="material-icons-outlined" aria-hidden="true">stop</span>
@@ -86,12 +89,25 @@
                             Klikněte a řekněte například:<br>
                             <span class="text-italic">"Chci dvě pizzy Hawai na adresu Dlouhá 5"</span>
                         </p>
-                        <p v-else class="caption-text">
-                            {{ transcript }}
-                        </p>
+                        <template v-else>
+                            <div 
+                                class="transcript-highlighter" 
+                                aria-hidden="true" 
+                                v-html="highlightedTranscript"></div>
+                            <textarea 
+                                v-model="transcript" 
+                                ref="captionTextarea"
+                                class="caption-text" 
+                                @input="autoResizeTextarea($event.target)"
+                                :readonly="isListening"
+                                placeholder="Zde můžete upravit text objednávky..."></textarea>
+                        </template>
                     </div>
                     <button v-if="isListening" @click="stopListening" class="stop-recording-btn" title="Zastavit nahrávání">
                         <span class="material-icons-outlined">stop_circle</span>
+                    </button>
+                    <button v-if="!isListening && transcript" @click="handleManualProcess" class="manual-process-btn" title="Zpracovat text">
+                        <span class="material-icons-outlined">check_circle</span>
                     </button>
                 </div>
             </section>
@@ -134,26 +150,28 @@
                             <span class="label">Celkem:</span>
                             <span class="value">{{ currentOrder.quantity }} ks</span>
                         </div>
-                        <div class="order-item" role="listitem">
-                            <span class="label">Adresa:</span>
-                            <textarea v-model="currentOrder.address" class="value-input" rows="1" ref="addressTextarea" @input="autoResizeTextarea($event.target)" placeholder="Zadejte adresu"></textarea>
-                        </div>
-                        <div class="order-item" role="listitem">
-                            <span class="label">Telefon:</span>
-                            <input type="tel" v-model="currentOrder.phone" class="value-input" placeholder="Zadejte telefon">
-                        </div>
-                        <div class="order-item" role="listitem">
-                            <span class="label">Čas doručení:</span>
-                            <input type="text" v-model="currentOrder.deliveryTime" class="value-input" placeholder="Např. co nejdříve nebo 18:30">
-                        </div>
-                        <div v-if="currentOrder.toppings?.length || toppingsText" class="order-item" role="listitem">
-                            <span class="label">Extra:</span>
-                            <textarea v-model="toppingsText" class="value-input" rows="1" ref="toppingsTextarea" @input="autoResizeTextarea($event.target)" placeholder="Přidejte extra přísady (např. sýr, slanina)"></textarea>
-                        </div>
+
+                        <transition name="expand">
+                            <div v-show="!isSummaryCollapsed" id="order-details" class="expand-wrapper">
+                                <div class="order-item" role="listitem">
+                                    <span class="label">Adresa:</span>
+                                    <textarea v-model="currentOrder.address" class="value-input" rows="1" ref="addressTextarea" @input="autoResizeTextarea($event.target)" placeholder="Zadejte adresu"></textarea>
+                                </div>
+                                <div class="order-item" role="listitem">
+                                    <span class="label">Telefon:</span>
+                                    <input type="tel" v-model="currentOrder.phone" class="value-input" placeholder="Zadejte telefon">
+                                </div>
+                                <div class="order-item" role="listitem">
+                                    <span class="label">Čas doručení:</span>
+                                    <input type="text" v-model="currentOrder.deliveryTime" class="value-input" placeholder="Např. co nejdříve nebo 18:30">
+                                </div>
+                                <div v-if="currentOrder.toppings?.length || toppingsText" class="order-item" role="listitem">
+                                    <span class="label">Extra:</span>
+                                    <textarea v-model="toppingsText" class="value-input" rows="1" ref="toppingsTextarea" @input="autoResizeTextarea($event.target)" placeholder="Přidejte extra přísady (např. sýr, slanina)"></textarea>
+                                </div>
+                            </div>
+                        </transition>
                     </div>
-                    <transition name="expand">
-                        <div v-show="!isSummaryCollapsed" id="order-details">
-                    </transition>
 
                     <div class="action-group">
                         <button class="btn-confirm" @click="handleConfirmOrder">Potvrdit a uložit</button>
@@ -161,7 +179,6 @@
                     </div>
                 </section>
             </transition>
-            </div> <!-- Closing div for expand transition -->
         </main>
 
         <footer role="contentinfo">
@@ -172,26 +189,6 @@
     <!-- Application Scripts -->
     <script type="module" src="app/app.js"></script>
     
-    <!-- Service Worker Registration -->
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then(reg => {
-                        console.log('SW registered');
-                    })
-                    .catch(err => console.log('SW registration failed', err));
-            });
-
-            let refreshing = false;
-            navigator.serviceWorker.addEventListener('controllerchange', () => {
-                if (!refreshing) {
-                    window.location.reload();
-                    refreshing = true;
-                }
-            });
-        }
-    </script>
 </body>
                         </html>
                         
