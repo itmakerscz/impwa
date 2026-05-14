@@ -99,6 +99,8 @@ createApp({
             lastError,
             showErrorNotification,
             isVoiceEnabled,
+            isWakeLockActive,
+            isWakeLockSupported,
             startListening,
             stopListening
         } = speech; // Destructure new reactive states
@@ -272,6 +274,8 @@ createApp({
             recordingTime,
             formatTime,
             lastError,
+            isWakeLockActive,
+            isWakeLockSupported,
             showErrorNotification,
             clearSpeechQueue: () => speech.speechSynthesizer.clearQueue(),
             isSpeechQueueActive, // Expose new computed property

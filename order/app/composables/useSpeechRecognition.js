@@ -2,7 +2,7 @@ import { AudioProcessor } from '../audio-processor.js';
 import { SpeechSynthesizer } from '../speech-synthesizer.js';
 import { useNotification } from './useNotification.js';
 
-const { ref, onUnmounted } = Vue;
+const { ref, onUnmounted, computed } = Vue;
 
 const ERROR_MESSAGES = {
     'not-allowed': "Přístup k mikrofonu byl zakázán. Zkontrolujte oprávnění v Android nastavení.",
@@ -22,6 +22,9 @@ export function useSpeechRecognition(onFinalResultCallback) {
     const recordingTime = ref(0);
     const lastError = ref("");
     const intentActive = ref(false); // Sleduje, zda uživatel skutečně chce nahrávat
+    const wakeLock = ref(null);
+    const isWakeLockSupported = ref('wakeLock' in navigator);
+    const isWakeLockActive = computed(() => !!wakeLock.value);
 
     const errorToast = useNotification();
 
@@ -43,6 +46,31 @@ export function useSpeechRecognition(onFinalResultCallback) {
     let timerInterval = null;
 
     const isVoiceEnabled = ref(!!SpeechRecognition);
+
+    const requestWakeLock = async () => {
+        if (isWakeLockSupported.value && !wakeLock.value) {
+            try {
+                wakeLock.value = await navigator.wakeLock.request('screen');
+                console.log("[WakeLock] Screen Wake Lock acquired");
+            } catch (err) {
+                console.error(`[WakeLock] Error: ${err.name}, ${err.message}`);
+            }
+        }
+    };
+
+    const releaseWakeLock = async () => {
+        if (wakeLock.value) {
+            await wakeLock.value.release();
+            wakeLock.value = null;
+            console.log("[WakeLock] Screen Wake Lock released");
+        }
+    };
+
+    const handleVisibilityChange = async () => {
+        if (intentActive.value && document.visibilityState === 'visible') {
+            await requestWakeLock();
+        }
+    };
 
     if (isVoiceEnabled.value) {
         recognition = new SpeechRecognition();
@@ -71,14 +99,22 @@ export function useSpeechRecognition(onFinalResultCallback) {
             // restartujeme ho. To řeší problém s timeoutem na Androidu.
             if (intentActive.value) {
                 console.log("Mobile timeout detected, auto-restarting...");
-                baseTranscript = transcript.value; // Uložíme aktuální text jako základ pro další session
-                try {
-                    recognition.start();
-                } catch (e) { console.error("Auto-restart failed", e); }
+                baseTranscript = transcript.value; 
+                
+                // Delay restart slightly to prevent 'recognition_overlap' on Android Chrome
+                setTimeout(() => {
+                    if (intentActive.value) {
+                        try {
+                            recognition.start();
+                        } catch (e) { console.error("Auto-restart failed", e); }
+                    }
+                }, 100);
             } else {
                 isListening.value = false;
                 clearInterval(timerInterval);
                 timerInterval = null;
+                releaseWakeLock();
+                document.removeEventListener('visibilitychange', handleVisibilityChange);
                 audioProcessor.stop();
                 volumeLevel.value = 0;
                 console.log("Recognition ended by user.");
@@ -136,6 +172,8 @@ export function useSpeechRecognition(onFinalResultCallback) {
                 }
             }
             
+            document.addEventListener('visibilitychange', handleVisibilityChange);
+            await requestWakeLock();
             recognition.start();
             return true;
         } catch (e) {
@@ -162,6 +200,8 @@ export function useSpeechRecognition(onFinalResultCallback) {
             clearInterval(timerInterval);
             timerInterval = null;
         }
+        releaseWakeLock();
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
         audioProcessor.stop();
     });
 
@@ -173,6 +213,8 @@ export function useSpeechRecognition(onFinalResultCallback) {
         lastError,
         showErrorNotification: errorToast.isVisible,
         isVoiceEnabled,
+        isWakeLockActive,
+        isWakeLockSupported,
         startListening,
         stopListening,
         speechSynthesizer, // Expose for speaking responses (and direct access to queue/isSpeaking if needed, though reactive refs are better)

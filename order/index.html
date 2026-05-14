@@ -60,6 +60,10 @@
                     <p>⚠️ Hlasové ovládání není momentálně k dispozici. Zkontrolujte připojení nebo prohlížeč.</p>
                 </div>
 
+                <div v-if="!isWakeLockSupported" class="warning-banner" role="alert">
+                    <p>⚠️ Váš prohlížeč nepodporuje automatické udržování zapnuté obrazovky. Zkontrolujte nastavení baterie, aby nedošlo k uspání telefonu během diktování.</p>
+                </div>
+
                 <div v-if="lastError" class="error-banner" role="alert" style="background: rgba(244, 67, 54, 0.2); margin-top: 1rem;">
                     <p>{{ lastError }}</p>
                 </div>
