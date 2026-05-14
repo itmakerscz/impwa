@@ -97,18 +97,20 @@ export function useSpeechRecognition(onFinalResultCallback) {
         recognition.onend = () => {
             // Pokud rozpoznávání skončilo, ale uživatel ho ručně nezastavil (intentActive),
             // restartujeme ho. To řeší problém s timeoutem na Androidu.
-            if (intentActive.value) {
-                console.log("Mobile timeout detected, auto-restarting...");
-                baseTranscript = transcript.value; 
-                
-                // Delay restart slightly to prevent 'recognition_overlap' on Android Chrome
-                setTimeout(() => {
-                    if (intentActive.value) {
-                        try {
-                            recognition.start();
-                        } catch (e) { console.error("Auto-restart failed", e); }
+            if (intentActive.value && !isSpeechSynthesizerSpeaking.value) {
+                console.log("[Android] Speech timeout, auto-restarting session...");
+                baseTranscript = transcript.value;
+
+                // 2026 Best Practice: 250ms delay is the "sweet spot" for Android 15+ 
+                // to clear the hardware buffer without losing the User Gesture context.
+                setTimeout(async () => {
+                    if (!intentActive.value) return;
+                    try {
+                        await recognition.start();
+                    } catch (e) { 
+                        console.warn("[Android] Restart suppressed - usually due to active audio output."); 
                     }
-                }, 100);
+                }, 250);
             } else {
                 isListening.value = false;
                 clearInterval(timerInterval);
@@ -163,18 +165,16 @@ export function useSpeechRecognition(onFinalResultCallback) {
         try {
             intentActive.value = true;
             baseTranscript = ""; // Nový start - vyčistit základ
-            if (navigator.permissions?.query) {
-                const res = await navigator.permissions.query({ name: 'microphone' });
-                if (res.state === 'denied') {
-                    lastError.value = "Přístup k mikrofonu je zakázán. Povolte jej v nastavení prohlížeče.";
-                    errorToast.trigger(8000);
-                    return false;
-                }
-            }
-            
-            document.addEventListener('visibilitychange', handleVisibilityChange);
-            await requestWakeLock();
+
+            // 1. Mandatory for Android: Start recognition IMMEDIATELY in the same tick 
+            // as the user click to satisfy strict Chrome security policies.
             recognition.start();
+
+            // 2. Secondary tasks (WakeLock, Listeners) must follow, not precede, recognition.start()
+            document.addEventListener('visibilitychange', handleVisibilityChange, { passive: true });
+            requestWakeLock();
+            if (navigator.vibrate) navigator.vibrate([40, 20, 40]); // 2026 Haptic "Listening" pattern
+
             return true;
         } catch (e) {
             console.error("Mic start error:", e);

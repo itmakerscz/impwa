@@ -87,7 +87,7 @@
                     <div class="volume-bar" :style="{ width: volumeLevel + '%' }"></div>
                 </div>
 
-                <div class="transcript-box" role="log" aria-live="polite">
+                <div class="transcript-box" :class="{ 'is-listening': isListening }" role="log" aria-live="polite">
                     <div class="caption-content">
                         <p v-if="!transcript" class="caption-placeholder">
                             Klikněte a řekněte například:<br>

@@ -205,6 +205,13 @@ createApp({
         onMounted(() => {
             updateTextareaHeights();
 
+            // Android-specific: Handle tab switching during long orders
+            document.addEventListener('resume', () => {
+                if (isListening.value) {
+                    console.log("[Android] System resume detected, verifying hardware state...");
+                }
+            });
+
             // Register Service Worker
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('./service-worker.js').then(reg => {

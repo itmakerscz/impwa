@@ -23,8 +23,11 @@ body {
     flex-direction: column;
     align-items: center;
     box-sizing: border-box;
-    /* Prevent pull-to-refresh on mobile which can kill speech sessions */
+    /* 2026 UX: Kill pull-to-refresh to protect the speech session state */
     overscroll-behavior-y: contain;
+    /* Standardize touch delay for faster feeling buttons */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
 header { width: 100%; max-width: 500px; margin-bottom: 2rem; }
@@ -98,6 +101,8 @@ footer { margin-top: 2rem; color: var(--text-muted); text-align: center; }
     display: flex;
     flex-direction: column;
     align-items: center;
+    padding-block: 1.5rem;
+    gap: 1rem;
 }
 
 .mic-btn {
@@ -121,7 +126,10 @@ footer { margin-top: 2rem; color: var(--text-muted); text-align: center; }
     user-select: none;
     touch-action: none; 
     will-change: transform, box-shadow;
-    margin-block: 2.5rem;
+    /* Increased vertical spacing for better visual pulse clearance on small screens */
+    margin-block: 5rem;
+    /* Prevent Android long-press magnifying glass */
+    -webkit-touch-callout: none;
 }
 
 .mic-btn:active {
@@ -152,10 +160,12 @@ footer { margin-top: 2rem; color: var(--text-muted); text-align: center; }
     opacity: 0.6;
 }
 
-/* Improve input usability on mobile - prevent auto-zoom */
+/* 2026 Accessibility: Force 16px to stop Android Chrome from zooming in on focus */
 input, textarea, select {
-    font-size: 16px !important; 
-    touch-action: manipulation;
+    font-size: 16px !important;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 215, 0, 0.2);
+    border-radius: 8px;
 }
 
 .timer-display {
@@ -204,20 +214,30 @@ input, textarea, select {
 }
 
 .transcript-box {
-    background: var(--card);
-    padding: 1.5rem;
-    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: 1rem;
+    border-radius: 20px;
     margin-top: 2rem;
     width: 100%;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     color: var(--text-muted);
-    font-style: normal;
     box-sizing: border-box;
     position: relative;
-    min-height: 70px;
+    min-height: 110px;
     overflow-y: auto;
-    max-height: 150px;
+    max-height: 250px;
     text-align: center;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+}
+
+.transcript-box.is-listening {
+    background: rgba(255, 215, 0, 0.02);
+    border-color: rgba(255, 215, 0, 0.3);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), 0 0 15px rgba(255, 215, 0, 0.05);
 }
 
 .caption-content {
@@ -241,8 +261,7 @@ input, textarea, select {
     font-size: 1.1rem;
     font-weight: 500;
     color: #fff;
-    display: block;
-    margin: 0;
+    margin: 0 auto;
     background: transparent !important;
     border: none;
     width: 100%;
@@ -250,20 +269,20 @@ input, textarea, select {
     text-align: center;
     font-family: inherit;
     outline: none !important;
-    padding: 0 35px 0 0; /* Space for the stop button */
+    padding: 0.5rem 45px 0.5rem 0.5rem;
     position: relative;
     z-index: 2;
     line-height: 1.4;
+    min-height: 1.4em;
 }
 
 .transcript-highlighter {
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 100%;
-    padding: 0 35px 0 0;
-    margin: 0;
+    top: 0.5rem;
+    left: 0.5rem;
+    right: 45px;
+    bottom: 0.5rem;
+    margin: 0 auto;
     font-size: 1.1rem;
     font-weight: 500;
     line-height: 1.4;
@@ -277,46 +296,39 @@ input, textarea, select {
     box-sizing: border-box;
 
     mark {
-        background-color: rgba(255, 215, 0, 0.3);
+        background-color: rgba(255, 215, 0, 0.15);
+        border-bottom: 2px solid var(--primary);
         color: transparent;
-        border-radius: 4px;
+        border-radius: 2px;
     }
 }
 
 .stop-recording-btn {
     position: absolute;
-    right: 15px;
-    top: 50%;
-    transform: translateY(-50%);
+    right: 12px;
+    top: 12px;
     background: none;
     border: none;
-    color: var(--text-muted);
+    color: var(--error);
     cursor: pointer;
     font-size: 2rem;
     padding: 0;
-    line-height: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: color 0.2s, transform 0.1s;
+    transition: all 0.2s ease;
+    opacity: 0.8;
 }
 
 .manual-process-btn {
     position: absolute;
-    right: 15px;
-    top: 50%;
-    transform: translateY(-50%);
+    right: 12px;
+    top: 12px;
     background: none;
     border: none;
-    color: var(--text-muted);
+    color: var(--success);
     cursor: pointer;
     font-size: 2rem;
     padding: 0;
-    line-height: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: color 0.2s, transform 0.1s;
+    transition: all 0.2s ease;
+    opacity: 0.8;
 }
 
 .manual-process-btn:hover {
