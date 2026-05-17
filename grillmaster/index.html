@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grill Master Companion</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#ff4500">
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body>
+
+  <div id="app" v-cloak>
+    <header>
+      <h1>🔥 Grill Master</h1>
+      <div :class="['wake-badge', wakeLockActive ? 'active' : 'inactive']">
+        {{ wakeLockActive ? '👁️ Screen Locked Awake' : '⚠️ Screen May Sleep' }}
+      </div>
+    </header>
+
+    <main>
+      <!-- Menu Grid Selection -->
+      <section class="menu-section">
+        <h2>Tap to Add to Grill</h2>
+        <div class="menu-grid">
+          <button 
+            v-for="food in foodPresets" 
+            :key="food.name" 
+            @click="addToGrill(food)"
+            class="food-btn"
+          >
+            <span class="icon">{{ food.icon }}</span>
+            <span class="name">{{ food.name }}</span>
+            <span class="time-meta">{{ formatMinutes(food.duration) }}</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Active Grilling Section -->
+      <section class="grill-section">
+        <h2>Active Grilling ({{ activeTimers.length }})</h2>
+        
+        <div v-if="activeTimers.length === 0" class="empty-grill">
+          <p>The grill is cold. Tap menu items above to start timers!</p>
+        </div>
+
+        <div class="timers-list" v-else>
+          <div 
+            v-for="timer in activeTimers" 
+            :key="timer.id" 
+            :class="['timer-card', { 'done': timer.remaining <= 0 }]"
+          >
+            <div class="timer-info">
+              <span class="timer-icon">{{ timer.icon }}</span>
+              <div>
+                <h3>{{ timer.name }}</h3>
+                <p v-if="timer.remaining > 0">Flip Every: {{ formatMinutes(timer.flipInterval) }}</p>
+                <p v-else class="done-text">✨ Perfectly Done! Remove from Heat!</p>
+              </div>
+            </div>
+
+            <div class="timer-controls">
+              <div class="time-display">{{ formatSeconds(timer.remaining) }}</div>
+              <button class="remove-btn" @click="removeTimer(timer.id)">❌</button>
+            </div>
+            
+            <!-- Progress Bar -->
+            <div class="progress-bar">
+              <div class="progress" :style="{ width: getProgress(timer) + '%' }"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
