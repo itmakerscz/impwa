@@ -2,53 +2,132 @@ const { createApp, ref, onMounted, onBeforeUnmount } = Vue;
 
 createApp({
   setup() {
-    // Standard recommended grill profiles (values in total seconds)
-    const foodPresets = ref([
-      { name: 'Ribeye/NY Strip (Medium Rare)', icon: '🥩', duration: 480, flipInterval: 120 },
-      { name: 'Thick Burger Patties', icon: '🍔', duration: 540, flipInterval: 135 },
-      { name: 'Chicken Breast', icon: '🍗', duration: 720, flipInterval: 180 },
-      { name: 'Pork Chops', icon: '🥓', duration: 600, flipInterval: 150 },
-      { name: 'Salmon Fillets', icon: '🐟', duration: 480, flipInterval: 240 },
-      { name: 'Grill Veggies / Corn', icon: '🌽', duration: 600, flipInterval: 150 }
-    ]);
+    const currentTab = ref('grill');
+    
+    // Globally recognized high-end traditional BBQ recipes profiles
+    const basePresets = [
+      { name: 'Texas Steak', icon: '🥩', duration: 600, flipInterval: 300, isCustom: false },
+      { name: 'Hermelin', icon: '🧀', duration: 300, flipInterval: 150, isCustom: false },
+      { name: 'Ribs', icon: '🐂', duration: 600, flipInterval: 300, isCustom: false },
+      { name: 'Vegetables', icon: '🌽', duration: 600, flipInterval: 0, isCustom: false }
+    ];
 
+    const foodPresets = ref([]);
     const activeTimers = ref([]);
     const wakeLockActive = ref(false);
     let wakeLockInstance = null;
     let timerInterval = null;
 
-    // Wake Lock System Setup
+    // Requested 32-icon culinary selection matrix
+    const iconLibrary = [
+      '🥩', '🍖', '🍔', '🥓', '🍗', '🌭', '🍢', '🐟', 
+      '🦐', '🦞', '🦪', '🌽', '🍄', '🧅', '🌶️', '🥔', 
+      '🍍', '🧀', '🍞', '🧂', '🐂', '🐖', '🐓', '🐑', 
+      '🥢', '⚔️', '🔥', '🍋', '🌿', '🍅', '🥑', '🇬🇷'
+    ];
+
+    // Reactive Editor state bindings
+    const newRecipe = ref({
+      name: '',
+      icon: '🥩',
+      minutes: 10,
+      flipMinutes: 2
+    });
+
+    // Parse and reconstruct local storage data caches
+    const initPresetsList = () => {
+      const stored = localStorage.getItem('custom_grill_recipes');
+      if (stored) {
+        try {
+          const parsedCustoms = JSON.parse(stored);
+          foodPresets.value = [...basePresets, ...parsedCustoms];
+        } catch(e) {
+          foodPresets.value = [...basePresets];
+        }
+      } else {
+        foodPresets.value = [...basePresets];
+      }
+    };
+
+    const saveCustomRecipe = () => {
+      if (!newRecipe.value.name.trim()) {
+        alert('Please assign a valid recipe name!');
+        return;
+      }
+      
+      const convertedRecipe = {
+        name: newRecipe.value.name,
+        icon: newRecipe.value.icon,
+        duration: (newRecipe.value.minutes || 1) * 60,
+        flipInterval: (newRecipe.value.flipMinutes || 1) * 60,
+        isCustom: true
+      };
+
+      const stored = localStorage.getItem('custom_grill_recipes');
+      let currentCustoms = [];
+      if (stored) {
+        try { currentCustoms = JSON.parse(stored); } catch(e) {}
+      }
+      
+      currentCustoms.push(convertedRecipe);
+      localStorage.setItem('custom_grill_recipes', JSON.stringify(currentCustoms));
+      
+      initPresetsList();
+      
+      // Clear inputs
+      newRecipe.value.name = '';
+      newRecipe.value.icon = '🥩';
+      newRecipe.value.minutes = 10;
+      newRecipe.value.flipMinutes = 2;
+      
+      currentTab.value = 'grill';
+    };
+
+    const deletePreset = (index) => {
+      const targetedItem = foodPresets.value[index];
+      if (!targetedItem.isCustom) return;
+
+      const stored = localStorage.getItem('custom_grill_recipes');
+      if (stored) {
+        try {
+          let currentCustoms = JSON.parse(stored);
+          currentCustoms = currentCustoms.filter(item => item.name !== targetedItem.name);
+          localStorage.setItem('custom_grill_recipes', JSON.stringify(currentCustoms));
+          initPresetsList();
+        } catch(e) {}
+      }
+    };
+
+    // Screen Wake Lock API Management
     const requestWakeLock = async () => {
       if ('wakeLock' in navigator) {
         try {
           wakeLockInstance = await navigator.wakeLock.request('screen');
           wakeLockActive.value = true;
-          
-          // Re-request if visibility state alters (app goes background/foreground)
           wakeLockInstance.addEventListener('release', () => {
             wakeLockActive.value = false;
           });
         } catch (err) {
-          console.warn(`Wake Lock could not activate: ${err.message}`);
-          wakeLockActive.value = false;
+          console.warn(`Wake Lock request rejected: ${err.message}`);
         }
       }
     };
 
-    // One Button Addition Logic
+    // Single-Action Initialization with Background-Safe Epoches
     const addToGrill = (food) => {
-      // Auto-initiate wake lock on user touch action interaction safely
-      if (!wakeLockActive.value) {
-        requestWakeLock();
-      }
+      if (!wakeLockActive.value) requestWakeLock();
 
+      const now = Date.now();
       activeTimers.value.push({
         id: Date.now() + Math.random(),
         name: food.name,
         icon: food.icon,
+        startTime: now,
+        endTime: now + (food.duration * 1000), // Epoch milestone calculation
         total: food.duration,
         remaining: food.duration,
-        flipInterval: food.flipInterval
+        flipInterval: food.flipInterval,
+        lastFlipAlerted: 0 // Tracking steps for intervals
       });
     };
 
@@ -56,56 +135,57 @@ createApp({
       activeTimers.value = activeTimers.value.filter(t => t.id !== id);
     };
 
-    // Audio Alert Engine using native Web Audio API (Offline friendly, no audio files needed)
-    const playAlertSound = () => {
+    // Native Low-Latency Synthesizer (Zero asset dependancies)
+    const playAlertSound = (isDone = false) => {
       try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const oscillator = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
 
-        oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 note
-        gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+        oscillator.type = 'triangle';
+        oscillator.frequency.setValueAtTime(isDone ? 987.77 : 659.25, audioCtx.currentTime); // High notes
+        gainNode.gain.setValueAtTime(0.4, audioCtx.currentTime);
 
         oscillator.connect(gainNode);
         gainNode.connect(audioCtx.destination);
-
         oscillator.start();
-        // Beep duration 0.3s
-        oscillator.stop(audioCtx.currentTime + 0.3);
-      } catch (e) {
-        console.error("Audio block error:", e);
-      }
+        oscillator.stop(audioCtx.currentTime + (isDone ? 0.6 : 0.25));
+      } catch (e) {}
     };
 
-    // Core Processing Ticker loop
+    // Epoch Delta Core Engine: Recalculates time from the system clock
+    // This allows accurate updates if the browser throttled/paused in the background
     const startGlobalTicker = () => {
       timerInterval = setInterval(() => {
+        const currentEpoch = Date.now();
+        
         activeTimers.value.forEach(timer => {
-          if (timer.remaining > 0) {
-            timer.remaining--;
+          const msRemaining = timer.endTime - currentEpoch;
+          
+          if (msRemaining > 0) {
+            const newRemaining = Math.ceil(msRemaining / 1000);
+            const totalElapsedSeconds = timer.total - newRemaining;
             
-            // Flip recommendation alerts
-            if (timer.remaining > 0 && (timer.total - timer.remaining) % timer.flipInterval === 0) {
-              playAlertSound();
+            // Check if we hit a flip interval step while away
+            const flipStep = Math.floor(totalElapsedSeconds / timer.flipInterval);
+            if (flipStep > timer.lastFlipAlerted && totalElapsedSeconds > 0) {
+              playAlertSound(false);
+              timer.lastFlipAlerted = flipStep;
             }
             
-            // Finished alarm
-            if (timer.remaining === 0) {
-              playAlertSound();
-              // Repeat beep immediately for emphasis
-              setTimeout(playAlertSound, 400);
+            timer.remaining = newRemaining;
+          } else {
+            if (timer.remaining > 0) { // Transitioning to 0 right now
+              timer.remaining = 0;
+              playAlertSound(true);
+              setTimeout(() => playAlertSound(true), 250);
             }
           }
         });
       }, 1000);
     };
 
-    // UI Formatting Utilities
-    const formatMinutes = (seconds) => {
-      return `${Math.round(seconds / 60)} min`;
-    };
-
+    const formatMinutes = (seconds) => `${Math.round(seconds / 60)}m`;
     const formatSeconds = (totalSeconds) => {
       const mins = Math.floor(totalSeconds / 60);
       const secs = totalSeconds % 60;
@@ -113,20 +193,27 @@ createApp({
     };
 
     const getProgress = (timer) => {
+      if (timer.remaining <= 0) return 100;
       return ((timer.total - timer.remaining) / timer.total) * 100;
     };
 
-    // Visibility Listener configuration to maintain wake status
+    // Visibility Listener checks for returning to app foreground
     const handleVisibilityChange = async () => {
-      if (wakeLockInstance !== null && document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible') {
         await requestWakeLock();
       }
     };
 
     onMounted(() => {
+      initPresetsList();
       startGlobalTicker();
       requestWakeLock();
       document.addEventListener('visibilitychange', handleVisibilityChange);
+      
+      // Hook web notifications permission if supported
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
     });
 
     onBeforeUnmount(() => {
@@ -136,11 +223,16 @@ createApp({
     });
 
     return {
+      currentTab,
       foodPresets,
       activeTimers,
       wakeLockActive,
+      iconLibrary,
+      newRecipe,
       addToGrill,
       removeTimer,
+      saveCustomRecipe,
+      deletePreset,
       formatMinutes,
       formatSeconds,
       getProgress
@@ -148,11 +240,8 @@ createApp({
   }
 }).mount('#app');
 
-// Register Service Worker for true PWA Offline Support
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('Service Worker Registered Successfully!'))
-      .catch(err => console.log('Service Worker Registration Failed: ', err));
+    navigator.serviceWorker.register('./sw.js').catch(err => console.error(err));
   });
 }

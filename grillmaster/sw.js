@@ -1,4 +1,4 @@
-const CACHE_NAME = 'grill-master-v1';
+const CACHE_NAME = 'grill-master-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -8,17 +8,13 @@ const ASSETS = [
   'https://unpkg.com/vue@3/dist/vue.global.js'
 ];
 
-// Install Service Worker and Cache Assets
 self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS);
-    })
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
   );
   self.skipWaiting();
 });
 
-// Activate & Cleanup Old Caches
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) => {
@@ -32,11 +28,8 @@ self.addEventListener('activate', (e) => {
   self.clients.claim();
 });
 
-// Network First falling back to Cache strategy
 self.addEventListener('fetch', (e) => {
   e.respondWith(
-    fetch(e.request).catch(() => {
-      return caches.match(e.request);
-    })
+    fetch(e.request).catch(() => caches.match(e.request))
   );
 });
