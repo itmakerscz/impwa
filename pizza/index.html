@@ -88,24 +88,23 @@
   </div>
 
   <script>
-    // Register the Service Worker for PWA compliance
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js')
-        .then(() => console.log("Service Worker registrován úspěšně."))
-        .catch(err => console.error("Registrace SW selhala:", err));
+        .then(() => console.log("Service Worker registrován."))
+        .catch(err => console.error("SW selhal:", err));
     }
 
-    // Initialize Web Speech API
     const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
     
     if (!SpeechRecognition) {
-      document.getElementById('status').innerText = "Web Speech API není v tomto prohlížeči podporováno.";
+      document.getElementById('status').innerText = "Web Speech API není podporováno.";
       document.getElementById('actionBtn').disabled = true;
       document.getElementById('actionBtn').style.background = "#9ca3af";
     } else {
       const recognition = new SpeechRecognition();
       recognition.continuous = true; 
-      recognition.interimResults = true; 
+      // Set interimResults to false on mobile to prevent double rendering loops
+      recognition.interimResults = false; 
       recognition.lang = 'cs-CZ'; 
 
       const actionBtn = document.getElementById('actionBtn');
@@ -113,31 +112,27 @@
       const status = document.getElementById('status');
       
       let shouldBeRecording = false;
-      let wakeLock = null; // Variable to hold our screen lock reference
+      let wakeLock = null; 
+      
+      // Cache the last recognized phrase to screen out duplicates
+      let lastFinalPhrase = "";
 
-      // Functions to handle Wake Lock securely
       async function requestWakeLock() {
         if ('wakeLock' in navigator) {
           try {
             wakeLock = await navigator.wakeLock.request('screen');
-            console.log("Wake Lock aktivován - obrazovka nezhasne.");
           } catch (err) {
-            console.warn(`Nepodařilo se aktivovat Wake Lock: ${err.message}`);
+            console.warn(`Wake Lock failed: ${err.message}`);
           }
         }
       }
 
       function releaseWakeLock() {
         if (wakeLock !== null) {
-          wakeLock.release()
-            .then(() => {
-              wakeLock = null;
-              console.log("Wake Lock uvolněn - obrazovka může zhasnout.");
-            });
+          wakeLock.release().then(() => { wakeLock = null; });
         }
       }
 
-      // Re-request wake lock if the user leaves the tab and comes back while recording is active
       document.addEventListener('visibilitychange', async () => {
         if (wakeLock !== null && document.visibilityState === 'visible' && shouldBeRecording) {
           await requestWakeLock();
@@ -149,8 +144,6 @@
         status.style.color = "#10b981";
         actionBtn.innerText = "Zastavit nahrávání";
         actionBtn.classList.add('recording');
-        
-        // Lock screen ON when recording starts
         await requestWakeLock();
       };
 
@@ -163,7 +156,6 @@
 
       recognition.onend = () => {
         if (shouldBeRecording) {
-          console.log("Restartování mikrofonu...");
           try {
             recognition.start();
           } catch (err) {
@@ -174,21 +166,36 @@
           status.style.color = "#6b7280";
           actionBtn.innerText = "Spustit nahrávání";
           actionBtn.classList.remove('recording');
-          
-          // Release screen lock when user explicitly stops recording
           releaseWakeLock();
+          lastFinalPhrase = ""; // Reset memory when stopped completely
         }
       };
 
       recognition.onresult = (event) => {
         let finalTranscript = '';
+
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
             finalTranscript += event.results[i][0].transcript;
           }
         }
-        if (finalTranscript) {
-          textbox.value += finalTranscript + ' ';
+
+        // Clean up text spacing
+        let cleanedPhrase = finalTranscript.trim();
+
+        if (cleanedPhrase) {
+          // ANTI-DUPLICATION FILTER: 
+          // If this phrase perfectly matches our last recorded text fragment, ignore it!
+          if (cleanedPhrase === lastFinalPhrase) {
+            console.log("Ignorován duplicitní text z Androidu:", cleanedPhrase);
+            return; 
+          }
+
+          // Save this text as the reference for the next cycle
+          lastFinalPhrase = cleanedPhrase;
+
+          // Append to text panel safely
+          textbox.value += cleanedPhrase + ' ';
           textbox.scrollTop = textbox.scrollHeight;
         }
       };
@@ -196,6 +203,7 @@
       actionBtn.addEventListener('click', () => {
         if (!shouldBeRecording) {
           shouldBeRecording = true;
+          lastFinalPhrase = ""; // Fresh session reset
           recognition.start();
         } else {
           shouldBeRecording = false; 
