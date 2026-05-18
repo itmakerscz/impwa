@@ -96,7 +96,7 @@
     }
 
     // Initialize Web Speech API
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
     
     if (!SpeechRecognition) {
       document.getElementById('status').innerText = "Web Speech API není v tomto prohlížeči podporováno.";
@@ -106,37 +106,64 @@
       const recognition = new SpeechRecognition();
       recognition.continuous = true; 
       recognition.interimResults = true; 
-      recognition.lang = 'cs-CZ'; // Configured for Czech language
+      recognition.lang = 'cs-CZ'; 
 
       const actionBtn = document.getElementById('actionBtn');
       const textbox = document.getElementById('textbox');
       const status = document.getElementById('status');
       
-      // State tracker to fight Android's aggressive auto-timeout feature
       let shouldBeRecording = false;
+      let wakeLock = null; // Variable to hold our screen lock reference
 
-      recognition.onstart = () => {
-        status.innerText = "Poslouchám actively (cs-CZ)...";
+      // Functions to handle Wake Lock securely
+      async function requestWakeLock() {
+        if ('wakeLock' in navigator) {
+          try {
+            wakeLock = await navigator.wakeLock.request('screen');
+            console.log("Wake Lock aktivován - obrazovka nezhasne.");
+          } catch (err) {
+            console.warn(`Nepodařilo se aktivovat Wake Lock: ${err.message}`);
+          }
+        }
+      }
+
+      function releaseWakeLock() {
+        if (wakeLock !== null) {
+          wakeLock.release()
+            .then(() => {
+              wakeLock = null;
+              console.log("Wake Lock uvolněn - obrazovka může zhasnout.");
+            });
+        }
+      }
+
+      // Re-request wake lock if the user leaves the tab and comes back while recording is active
+      document.addEventListener('visibilitychange', async () => {
+        if (wakeLock !== null && document.visibilityState === 'visible' && shouldBeRecording) {
+          await requestWakeLock();
+        }
+      });
+
+      recognition.onstart = async () => {
+        status.innerText = "Poslouchám (cs-CZ)...";
         status.style.color = "#10b981";
         actionBtn.innerText = "Zastavit nahrávání";
         actionBtn.classList.add('recording');
+        
+        // Lock screen ON when recording starts
+        await requestWakeLock();
       };
 
       recognition.onerror = (e) => {
-        // 'no-speech' is triggered when the user pauses talking. 
-        // We log it silently because the onend loop will kick start it right back up.
-        if (e.error === 'no-speech') {
-          console.log("Detekováno ticho. Automatický restart to vyřeší...");
-        } else {
+        if (e.error !== 'no-speech') {
           status.innerText = `Chyba: ${e.error}`;
           status.style.color = "#ef4444";
         }
       };
 
       recognition.onend = () => {
-        // If the mic shut down structurally but the user DID NOT click stop, force-reboot it
         if (shouldBeRecording) {
-          console.log("Obcházení limitu Androidu: Restartování mikrofonu...");
+          console.log("Restartování mikrofonu...");
           try {
             recognition.start();
           } catch (err) {
@@ -147,22 +174,21 @@
           status.style.color = "#6b7280";
           actionBtn.innerText = "Spustit nahrávání";
           actionBtn.classList.remove('recording');
+          
+          // Release screen lock when user explicitly stops recording
+          releaseWakeLock();
         }
       };
 
       recognition.onresult = (event) => {
         let finalTranscript = '';
-
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
             finalTranscript += event.results[i][0].transcript;
           }
         }
-        
-        // Append transcribed text cleanly with trailing whitespace
         if (finalTranscript) {
           textbox.value += finalTranscript + ' ';
-          // Auto-scroll textarea to bottom as text populates
           textbox.scrollTop = textbox.scrollHeight;
         }
       };
@@ -172,7 +198,7 @@
           shouldBeRecording = true;
           recognition.start();
         } else {
-          shouldBeRecording = false; // User clicked manually, gracefully power down
+          shouldBeRecording = false; 
           recognition.stop();
         }
       });
