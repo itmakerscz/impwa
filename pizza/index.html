@@ -103,8 +103,7 @@
     } else {
       const recognition = new SpeechRecognition();
       recognition.continuous = true; 
-      // Set interimResults to false on mobile to prevent double rendering loops
-      recognition.interimResults = false; 
+      recognition.interimResults = true; // Enables instant, live rendering
       recognition.lang = 'cs-CZ'; 
 
       const actionBtn = document.getElementById('actionBtn');
@@ -114,13 +113,15 @@
       let shouldBeRecording = false;
       let wakeLock = null; 
       
-      // Cache the last recognized phrase to screen out duplicates
+      // Memory state to isolate text streams and stop duplicates
+      let committedText = "";
       let lastFinalPhrase = "";
 
       async function requestWakeLock() {
         if ('wakeLock' in navigator) {
           try {
             wakeLock = await navigator.wakeLock.request('screen');
+            console.log("Wake Lock aktivní.");
           } catch (err) {
             console.warn(`Wake Lock failed: ${err.message}`);
           }
@@ -140,7 +141,7 @@
       });
 
       recognition.onstart = async () => {
-        status.innerText = "Poslouchám (cs-CZ)...";
+        status.innerText = "Poslouchám živě (cs-CZ)...";
         status.style.color = "#10b981";
         actionBtn.innerText = "Zastavit nahrávání";
         actionBtn.classList.add('recording');
@@ -157,7 +158,7 @@
       recognition.onend = () => {
         if (shouldBeRecording) {
           try {
-            recognition.start();
+            recognition.start(); // Auto-recovery from 5 second idle limit
           } catch (err) {
             console.error("Chyba při restartu:", err);
           }
@@ -167,43 +168,44 @@
           actionBtn.innerText = "Spustit nahrávání";
           actionBtn.classList.remove('recording');
           releaseWakeLock();
-          lastFinalPhrase = ""; // Reset memory when stopped completely
+          lastFinalPhrase = ""; 
         }
       };
 
       recognition.onresult = (event) => {
+        let interimTranscript = '';
         let finalTranscript = '';
 
+        // Separate finished words from ongoing raw speech audio
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
             finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
           }
         }
 
-        // Clean up text spacing
-        let cleanedPhrase = finalTranscript.trim();
+        let cleanedFinal = finalTranscript.trim();
 
-        if (cleanedPhrase) {
-          // ANTI-DUPLICATION FILTER: 
-          // If this phrase perfectly matches our last recorded text fragment, ignore it!
-          if (cleanedPhrase === lastFinalPhrase) {
-            console.log("Ignorován duplicitní text z Androidu:", cleanedPhrase);
-            return; 
+        if (cleanedFinal) {
+          // Double check engine outputs to drop accidental replica streams
+          if (cleanedFinal !== lastFinalPhrase) {
+            lastFinalPhrase = cleanedFinal;
+            committedText += cleanedFinal + ' ';
           }
-
-          // Save this text as the reference for the next cycle
-          lastFinalPhrase = cleanedPhrase;
-
-          // Append to text panel safely
-          textbox.value += cleanedPhrase + ' ';
-          textbox.scrollTop = textbox.scrollHeight;
         }
+
+        // Output fixed structural text combined with dynamic current speech
+        textbox.value = committedText + interimTranscript;
+        textbox.scrollTop = textbox.scrollHeight;
       };
 
       actionBtn.addEventListener('click', () => {
         if (!shouldBeRecording) {
           shouldBeRecording = true;
-          lastFinalPhrase = ""; // Fresh session reset
+          lastFinalPhrase = ""; 
+          // Initialize memory with whatever text happens to already be in the textarea box
+          committedText = textbox.value ? textbox.value.trim() + ' ' : "";
           recognition.start();
         } else {
           shouldBeRecording = false; 
