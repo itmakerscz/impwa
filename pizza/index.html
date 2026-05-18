@@ -63,7 +63,6 @@
     button.recording { background: #ef4444; }
     .status { font-size: 14px; color: #6b7280; height: 20px; margin-bottom: 8px; font-weight: 500; }
 
-    /* New CSS styling for the History Box container */
     .history-card {
       background: white;
       padding: 24px;
@@ -97,7 +96,6 @@
     <button id="actionBtn">Spustit nahrávání</button>
   </div>
 
-  <!-- Real-time orders viewing window container -->
   <div class="history-card">
     <h3>Uložené objednávky</h3>
     <div id="ordersLog" class="orders-log">
@@ -136,7 +134,6 @@
         textbox.scrollTop = 0;
       }
 
-      // UI Template Engine: Renders stored elements safely into your layout view
       function updateHistoryDisplay() {
         try {
           const data = localStorage.getItem('objednavky');
@@ -147,10 +144,10 @@
             return;
           }
 
-          // Reverse array sorting so freshest logs appear first at top
-          ordersLog.innerHTML = orders.reverse().map(order => {
+          // Zobrazení od nejnovější po nejstarší
+          ordersLog.innerHTML = [...orders].reverse().map(order => {
             const dateObj = new Date(order.timestamp);
-            const timeFormatted = dateObj.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute:'2-digit'});
+            const timeFormatted = dateObj.toLocaleTimeString('cs-CZ', {hour: '2-digit', minute:'2-digit', second:'2-digit'});
             const dateFormatted = dateObj.toLocaleDateString('cs-CZ', {day: 'numeric', month: 'numeric'});
             
             return `
@@ -164,11 +161,10 @@
             `;
           }).join('');
         } catch (e) {
-          console.error("Failed rendering log module UI layout:", e);
+          console.error("Chyba při vykreslování historie:", e);
         }
       }
 
-      // Basic protection layer converting string layouts safely to raw elements
       function escapeHtml(text) {
         return text
           .replace(/&/g, "&amp;")
@@ -194,11 +190,10 @@
           ordersList.push(newOrderEntry);
           localStorage.setItem('objednavky', JSON.stringify(ordersList));
           
-          // Re-render immediately on successful storage save
           updateHistoryDisplay();
           return true;
         } catch (error) {
-          console.error("Storage write error:", error);
+          console.error("Chyba zápisu do localStorage:", error);
           return false;
         }
       }
@@ -219,7 +214,7 @@
 
         recognition.onend = () => {
           if (shouldBeRecording) {
-            console.log("Stream dropped by browser timeout. Reinforcing listener loop...");
+            console.log("Stream přerušen časovým limitem. Restartuji smyčku...");
             try {
               initRecognition();
               recognition.start();
@@ -247,12 +242,14 @@
               continue;
             }
 
-            const textSnippet = resultChunk[0].transcript.trim();
+            const textSnippet = resultChunk[0].transcript;
 
-            if (resultChunk.isFinal && textSnippet) {
-              const cleanSnippet = textSnippet.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+            if (resultChunk.isFinal && textSnippet.trim()) {
+              // Normalizace řetězce pro spolehlivé vyhledávání maker uvnitř textu
+              let normalizedSnippet = textSnippet.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
               
-              if (cleanSnippet === "nováobjednávka") {
+              // MACRO 1: NOVÁ OBJEDNÁVKA (Smazání plátna kdekoli v textu)
+              if (normalizedSnippet.includes("nováobjednávka")) {
                 status.innerText = "Nová objednávka inicializována...";
                 status.style.color = "#3b82f6";
                 resetCanvas();
@@ -260,11 +257,19 @@
                 continue; 
               }
 
-              if (cleanSnippet === "uložitobjednávku") {
-                const finalAssembledText = committedParagraphs.join(' ').trim();
+              // MACRO 2: ULOŽIT OBJEDNÁVKU (Uložení a pročištění kdekoli v textu)
+              if (normalizedSnippet.includes("uložitobjednávku")) {
+                // Spojíme dosavadní potvrzený text a nový blok
+                let currentText = committedParagraphs.join(' ') + ' ' + textSnippet;
                 
-                if (finalAssembledText) {
-                  const wasSaved = saveOrderToStorage(finalAssembledText);
+                // Odmažeme z textu samotný spouštěcí příkaz (case-insensitive)
+                let cleanSavedText = currentText
+                  .replace(/uložit\s+objednávku/gi, "")
+                  .replace(/\s+/g, " ")
+                  .trim();
+                
+                if (cleanSavedText) {
+                  const wasSaved = saveOrderToStorage(cleanSavedText);
                   if (wasSaved) {
                     status.innerText = "Objednávka byla úspěšně uložena! ✔";
                     status.style.color = "#10b981";
@@ -282,24 +287,25 @@
                 continue;
               }
 
+              // Klasická filtrace duplicit (pokud nebylo detekováno makro)
               let isGhostDuplicate = false;
               const lookbackWindow = committedParagraphs.slice(-3); 
               
               for (let pastSentence of lookbackWindow) {
-                if (getSimilarity(pastSentence, textSnippet) > 0.85) {
+                if (getSimilarity(pastSentence, textSnippet.trim()) > 0.85) {
                   isGhostDuplicate = true;
                   break;
                 }
               }
 
               if (!isGhostDuplicate) {
-                committedParagraphs.push(textSnippet);
+                committedParagraphs.push(textSnippet.trim());
               } else {
-                console.warn("Blocked Browser Ghost Duplicate: ", textSnippet);
+                console.warn("Zablokována duplicita prohlížeče: ", textSnippet);
               }
             } else if (!resultChunk.isFinal) {
               const liveCleanInterim = resultChunk[0].transcript.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
-              if (liveCleanInterim === "nováobjednávka" || liveCleanInterim === "uložitobjednávku") {
+              if (liveCleanInterim.includes("nováobjednávka") || liveCleanInterim.includes("uložitobjednávku")) {
                 interimTranscript = "";
                 continue;
               }
@@ -329,7 +335,7 @@
         };
         
         recognition.onerror = (event) => {
-          console.error("Speech Recognition System Error:", event.error);
+          console.error("Chyba rozpoznávání řeči:", event.error);
           if (event.error === 'no-speech') return;
         };
       }
@@ -363,8 +369,6 @@
       }
 
       initRecognition();
-      
-      // Load and display previous sessions' orders instantly upon app start
       updateHistoryDisplay();
 
       actionBtn.addEventListener('click', () => {
