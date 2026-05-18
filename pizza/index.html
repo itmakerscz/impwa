@@ -96,7 +96,40 @@
       let committedParagraphs = []; 
       let renderPending = false;
 
-      // Initialize the speech recognition instance with optimized settings
+      // Helper logic to clear out canvas and data properties systematically
+      function resetCanvas() {
+        committedParagraphs = [];
+        committedSpan.innerText = "";
+        interimSpan.innerText = "";
+        textbox.scrollTop = 0;
+      }
+
+      // LocalStorage engine to securely pack order logs down
+      function saveOrderToStorage(textPayload) {
+        if (!textPayload.trim()) return false;
+        
+        try {
+          // Pull existing logs list, parse them, or start a clean container array
+          const historicalData = localStorage.getItem('objednavky');
+          const ordersList = historicalData ? JSON.parse(historicalData) : [];
+          
+          // Generate an indexable data block object
+          const newOrderEntry = {
+            id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36),
+            timestamp: new Date().toISOString(),
+            text: textPayload
+          };
+          
+          ordersList.push(newOrderEntry);
+          localStorage.setItem('objednavky', JSON.stringify(ordersList));
+          console.log("Order saved safely to localStorage:", newOrderEntry);
+          return true;
+        } catch (error) {
+          console.error("Storage write error:", error);
+          return false;
+        }
+      }
+
       function initRecognition() {
         recognition = new SpeechRecognition();
         recognition.continuous = true; 
@@ -144,28 +177,38 @@
             const textSnippet = resultChunk[0].transcript.trim();
 
             if (resultChunk.isFinal && textSnippet) {
-              // VOICE COMMAND INTERCEPTOR:
-              // Normalize input string by removing capitals, spacing, and punctuation
               const cleanSnippet = textSnippet.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
               
+              // MACRO 1: CLEAR SCREEN ("nová objednávka")
               if (cleanSnippet === "nováobjednávka") {
-                console.log("Voice Command Detected: Wiping canvas for 'Nová objednávka'...");
-                
-                // Flash status bar visually to alert user command processed
                 status.innerText = "Nová objednávka inicializována...";
                 status.style.color = "#3b82f6";
-                
-                // Instantly purge data arrays and DOM layout nodes
-                committedParagraphs = [];
-                committedSpan.innerText = "";
-                interimSpan.innerText = "";
+                resetCanvas();
                 interimTranscript = "";
-                
-                // Auto scroll back up to starting top position
-                textbox.scrollTop = 0;
-                
-                // Skip pushing the command phrase into text arrays
                 continue; 
+              }
+
+              // MACRO 2: SAVE DATA ("uložit objednávku")
+              if (cleanSnippet === "uložitobjednávku") {
+                const finalAssembledText = committedParagraphs.join(' ').trim();
+                
+                if (finalAssembledText) {
+                  const wasSaved = saveOrderToStorage(finalAssembledText);
+                  if (wasSaved) {
+                    status.innerText = "Objednávka byla úspěšně uložena! ✔";
+                    status.style.color = "#10b981";
+                  } else {
+                    status.innerText = "Chyba při ukládání do paměti.";
+                    status.style.color = "#ef4444";
+                  }
+                } else {
+                  status.innerText = "Nelze uložit prázdný text.";
+                  status.style.color = "#f59e0b";
+                }
+                
+                resetCanvas();
+                interimTranscript = "";
+                continue;
               }
 
               // Normal Anti-Duplication Filtering
@@ -185,10 +228,8 @@
                 console.warn("Blocked Browser Ghost Duplicate: ", textSnippet);
               }
             } else if (!resultChunk.isFinal) {
-              // Optional: Intercept live interim transcription to improve response speed
               const liveCleanInterim = resultChunk[0].transcript.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
-              if (liveCleanInterim === "nováobjednávka") {
-                // Catch early processing signals before browser flags chunk as isFinal
+              if (liveCleanInterim === "nováobjednávka" || liveCleanInterim === "uložitobjednávku") {
                 interimTranscript = "";
                 continue;
               }
@@ -205,14 +246,14 @@
               textbox.scrollTop = textbox.scrollHeight;
               renderPending = false;
               
-              // Reset status string color safely if overwritten by macro flash
-              if (shouldBeRecording && status.innerText.includes("Nová objednávka")) {
+              // Safely step status message back down into base recording view after a notice delay
+              if (shouldBeRecording && (status.innerText.includes("Nová") || status.innerText.includes("uložena") || status.innerText.includes("Nelze") || status.innerText.includes("Chyba"))) {
                 setTimeout(() => {
                   if (shouldBeRecording) {
                     status.innerText = "Poslouchám (cs-CZ)...";
                     status.style.color = "#10b981";
                   }
-                }, 1200);
+                }, 2000);
               }
             });
           }
@@ -252,7 +293,6 @@
         return 0.0;
       }
 
-      // Initial application ignition
       initRecognition();
 
       actionBtn.addEventListener('click', () => {
