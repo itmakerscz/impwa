@@ -45,6 +45,14 @@
       contain: content; 
     }
     .output-panel:focus { outline: 2px solid #4f46e5; background: white; }
+    
+    /* Native placeholder solution for contenteditable containers */
+    .output-panel:empty::before {
+      content: attr(placeholder);
+      color: #9ca3af;
+      pointer-events: none;
+    }
+    
     .interim { color: #9ca3af; font-style: italic; }
     
     button { 
@@ -61,7 +69,8 @@
   <div class="card">
     <h2>Hlasový Zápisník</h2>
     <div id="status" class="status">Připraveno ke spuštění...</div>
-    <div id="textbox" class="output-panel" contenteditable="true" placeholder="Zde se objeví váš text..."></div>
+    <!-- Cleaned container: Split user editable text from the unstable raw audio container -->
+    <div id="textbox" class="output-panel" contenteditable="true" placeholder="Zde se objeví váš text..."><span id="committedText"></span><span id="interimText" class="interim" contenteditable="false"></span></div>
     <button id="actionBtn">Spustit nahrávání</button>
   </div>
 
@@ -83,26 +92,38 @@
 
       const actionBtn = document.getElementById('actionBtn');
       const textbox = document.getElementById('textbox');
+      const committedSpan = document.getElementById('committedText');
+      const interimSpan = document.getElementById('interimText');
       const status = document.getElementById('status');
       
       let shouldBeRecording = false;
       let wakeLock = null; 
       
       let committedParagraphs = []; 
-      // Set to track recent textual phrases to catch ghost duplicates
       let uniquePhrasesMemory = new Set(); 
-
       let renderPending = false;
 
       async function requestWakeLock() {
         if ('wakeLock' in navigator && !wakeLock) {
-          try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+          try { 
+            wakeLock = await navigator.wakeLock.request('screen'); 
+            console.log("Wake Lock acquired successfully.");
+          } catch (e) {}
         }
       }
 
       function releaseWakeLock() {
-        if (wakeLock) { wakeLock.release().then(() => { wakeLock = null; }); }
+        if (wakeLock) { 
+          wakeLock.release().then(() => { wakeLock = null; console.log("Wake Lock released."); }); 
+        }
       }
+
+      // Restored Safety Hook: Re-acquires wake lock if the app goes out of view and comes back
+      document.addEventListener('visibilitychange', async () => {
+        if (wakeLock !== null && document.visibilityState === 'visible' && shouldBeRecording) {
+          await requestWakeLock();
+        }
+      });
 
       recognition.onstart = async () => {
         status.innerText = "Poslouchám (cs-CZ)...";
@@ -121,6 +142,7 @@
           actionBtn.innerText = "Spustit nahrávání";
           actionBtn.classList.remove('recording');
           releaseWakeLock();
+          interimSpan.innerText = ""; // Empty live buffer instantly on stop
         }
       };
 
@@ -133,16 +155,12 @@
           const textSnippet = resultChunk[0].transcript.trim();
 
           if (resultChunk.isFinal && textSnippet) {
-            // Normalizing text string for strict comparison
             const standardizedText = textSnippet.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
             
-            // ANTI-DUPLICATION ENGINE:
-            // Check if this exact text sequence already exists in our active memory cache
             if (!uniquePhrasesMemory.has(standardizedText)) {
               uniquePhrasesMemory.add(standardizedText);
               committedParagraphs.push(resultChunk[0].transcript.trim());
               
-              // Keep memory light. If it exceeds 100 entries, drop the oldest phrase tracker
               if (uniquePhrasesMemory.size > 100) {
                 const firstValue = uniquePhrasesMemory.values().next().value;
                 uniquePhrasesMemory.delete(firstValue);
@@ -155,17 +173,14 @@
           }
         }
 
-        // Optimized rendering thread pipeline via requestAnimationFrame
         if (!renderPending) {
           renderPending = true;
           requestAnimationFrame(() => {
             const finalAssembledText = committedParagraphs.join(' ');
             
-            if (interimTranscript) {
-              textbox.innerHTML = finalAssembledText + (finalAssembledText ? ' ' : '') + `<span class="interim">${interimTranscript}</span>`;
-            } else {
-              textbox.innerText = finalAssembledText + (finalAssembledText ? ' ' : '');
-            }
+            // Critical Fix: Update text nodes directly to avoid resetting the typing cursor caret
+            committedSpan.innerText = finalAssembledText + (finalAssembledText ? ' ' : '');
+            interimSpan.innerText = interimTranscript;
 
             textbox.scrollTop = textbox.scrollHeight;
             renderPending = false;
@@ -178,10 +193,10 @@
           shouldBeRecording = true;
           uniquePhrasesMemory.clear();
           
-          const initialCleanText = textbox.innerText.trim();
+          // Grabs only text characters, ignoring the HTML nodes inside
+          const initialCleanText = committedSpan.innerText.trim() || textbox.innerText.replace(interimSpan.innerText, "").trim();
           if (initialCleanText) {
             committedParagraphs = [initialCleanText];
-            // Seed memory with existing text so we don't copy it back over
             const seedKey = initialCleanText.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
             uniquePhrasesMemory.add(seedKey);
           } else {
