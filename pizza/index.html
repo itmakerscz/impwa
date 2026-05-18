@@ -84,11 +84,7 @@
       document.getElementById('status').innerText = "Web Speech API nepodporováno.";
       document.getElementById('actionBtn').disabled = true;
     } else {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true; 
-      recognition.interimResults = true; 
-      recognition.lang = 'cs-CZ'; 
-
+      let recognition = null;
       const actionBtn = document.getElementById('actionBtn');
       const textbox = document.getElementById('textbox');
       const committedSpan = document.getElementById('committedText');
@@ -97,9 +93,136 @@
       
       let shouldBeRecording = false;
       let wakeLock = null; 
-      
       let committedParagraphs = []; 
       let renderPending = false;
+
+      // Initialize the speech recognition instance with optimized settings
+      function initRecognition() {
+        recognition = new SpeechRecognition();
+        recognition.continuous = true; 
+        recognition.interimResults = true; 
+        recognition.lang = 'cs-CZ'; 
+
+        recognition.onstart = async () => {
+          status.innerText = "Poslouchám (cs-CZ)...";
+          status.style.color = "#10b981";
+          actionBtn.innerText = "Zastavit nahrávání";
+          actionBtn.classList.add('recording');
+          await requestWakeLock();
+        };
+
+        recognition.onend = () => {
+          if (shouldBeRecording) {
+            console.log("Stream dropped by browser timeout. Reinforcing listener loop...");
+            try {
+              initRecognition();
+              recognition.start();
+            } catch (err) {
+              setTimeout(() => { if (shouldBeRecording) recognition.start(); }, 300);
+            }
+          } else {
+            status.innerText = "Nahrávání zastaveno.";
+            status.style.color = "#6b7280";
+            actionBtn.innerText = "Spustit nahrávání";
+            actionBtn.classList.remove('recording');
+            releaseWakeLock();
+            interimSpan.innerText = ""; 
+          }
+        };
+
+        recognition.onresult = (event) => {
+          let interimTranscript = '';
+          let startIdx = event.resultIndex;
+
+          for (let i = startIdx; i < event.results.length; ++i) {
+            const resultChunk = event.results[i];
+            
+            if (resultChunk[0].confidence === 0 && resultChunk.isFinal) {
+              continue;
+            }
+
+            const textSnippet = resultChunk[0].transcript.trim();
+
+            if (resultChunk.isFinal && textSnippet) {
+              // VOICE COMMAND INTERCEPTOR:
+              // Normalize input string by removing capitals, spacing, and punctuation
+              const cleanSnippet = textSnippet.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+              
+              if (cleanSnippet === "nováobjednávka") {
+                console.log("Voice Command Detected: Wiping canvas for 'Nová objednávka'...");
+                
+                // Flash status bar visually to alert user command processed
+                status.innerText = "Nová objednávka inicializována...";
+                status.style.color = "#3b82f6";
+                
+                // Instantly purge data arrays and DOM layout nodes
+                committedParagraphs = [];
+                committedSpan.innerText = "";
+                interimSpan.innerText = "";
+                interimTranscript = "";
+                
+                // Auto scroll back up to starting top position
+                textbox.scrollTop = 0;
+                
+                // Skip pushing the command phrase into text arrays
+                continue; 
+              }
+
+              // Normal Anti-Duplication Filtering
+              let isGhostDuplicate = false;
+              const lookbackWindow = committedParagraphs.slice(-3); 
+              
+              for (let pastSentence of lookbackWindow) {
+                if (getSimilarity(pastSentence, textSnippet) > 0.85) {
+                  isGhostDuplicate = true;
+                  break;
+                }
+              }
+
+              if (!isGhostDuplicate) {
+                committedParagraphs.push(textSnippet);
+              } else {
+                console.warn("Blocked Browser Ghost Duplicate: ", textSnippet);
+              }
+            } else if (!resultChunk.isFinal) {
+              // Optional: Intercept live interim transcription to improve response speed
+              const liveCleanInterim = resultChunk[0].transcript.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+              if (liveCleanInterim === "nováobjednávka") {
+                // Catch early processing signals before browser flags chunk as isFinal
+                interimTranscript = "";
+                continue;
+              }
+              interimTranscript += resultChunk[0].transcript;
+            }
+          }
+
+          if (!renderPending) {
+            renderPending = true;
+            requestAnimationFrame(() => {
+              const finalAssembledText = committedParagraphs.join(' ');
+              committedSpan.innerText = finalAssembledText + (finalAssembledText ? ' ' : '');
+              interimSpan.innerText = interimTranscript;
+              textbox.scrollTop = textbox.scrollHeight;
+              renderPending = false;
+              
+              // Reset status string color safely if overwritten by macro flash
+              if (shouldBeRecording && status.innerText.includes("Nová objednávka")) {
+                setTimeout(() => {
+                  if (shouldBeRecording) {
+                    status.innerText = "Poslouchám (cs-CZ)...";
+                    status.style.color = "#10b981";
+                  }
+                }, 1200);
+              }
+            });
+          }
+        };
+        
+        recognition.onerror = (event) => {
+          console.error("Speech Recognition System Error:", event.error);
+          if (event.error === 'no-speech') return;
+        };
+      }
 
       async function requestWakeLock() {
         if ('wakeLock' in navigator && !wakeLock) {
@@ -113,97 +236,24 @@
         }
       }
 
-      // Re-acquire wake lock automatically when the app comes back to the foreground
       document.addEventListener('visibilitychange', async () => {
         if (wakeLock !== null && document.visibilityState === 'visible' && shouldBeRecording) {
           await requestWakeLock();
         }
       });
 
-      recognition.onstart = async () => {
-        status.innerText = "Poslouchám (cs-CZ)...";
-        status.style.color = "#10b981";
-        actionBtn.innerText = "Zastavit nahrávání";
-        actionBtn.classList.add('recording');
-        await requestWakeLock();
-      };
-
-      recognition.onend = () => {
-        if (shouldBeRecording) {
-          try { recognition.start(); } catch (err) {}
-        } else {
-          status.innerText = "Nahrávání zastaveno.";
-          status.style.color = "#6b7280";
-          actionBtn.innerText = "Spustit nahrávání";
-          actionBtn.classList.remove('recording');
-          releaseWakeLock();
-          interimSpan.innerText = ""; 
-        }
-      };
-
-      // Compares sentences to catch streaming overlaps or direct phrase repetitions
       function getSimilarity(str1, str2) {
         const s1 = str1.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
         const s2 = str2.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
         if (s1 === s2) return 1.0;
         if (!s1 || !s2) return 0.0;
-        
         if (s1.includes(s2) && s1.length < s2.length + 5) return 0.9;
         if (s2.includes(s1) && s2.length < s1.length + 5) return 0.9;
-        
         return 0.0;
       }
 
-      recognition.onresult = (event) => {
-        let interimTranscript = '';
-        let startIdx = event.resultIndex;
-
-        for (let i = startIdx; i < event.results.length; ++i) {
-          const resultChunk = event.results[i];
-          
-          // Drop low confidence audio fragments/line-pops during pauses
-          if (resultChunk[0].confidence === 0 && resultChunk.isFinal) {
-            continue;
-          }
-
-          const textSnippet = resultChunk[0].transcript.trim();
-
-          if (resultChunk.isFinal && textSnippet) {
-            let isGhostDuplicate = false;
-            // Scan only the last 3 parsed items to prevent duplicating words you intentionally repeat
-            const lookbackWindow = committedParagraphs.slice(-3); 
-            
-            for (let pastSentence of lookbackWindow) {
-              if (getSimilarity(pastSentence, textSnippet) > 0.85) {
-                isGhostDuplicate = true;
-                break;
-              }
-            }
-
-            if (!isGhostDuplicate) {
-              committedParagraphs.push(textSnippet);
-            } else {
-              console.warn("Blocked Browser Ghost Duplicate: ", textSnippet);
-            }
-          } else if (!resultChunk.isFinal) {
-            interimTranscript += resultChunk[0].transcript;
-          }
-        }
-
-        if (!renderPending) {
-          renderPending = true;
-          requestAnimationFrame(() => {
-            const finalAssembledText = committedParagraphs.join(' ');
-            
-            // Updates underlying DOM nodes directly so text selection and caret positions don't tear
-            committedSpan.innerText = finalAssembledText + (finalAssembledText ? ' ' : '');
-            interimSpan.innerText = interimTranscript;
-
-            textbox.scrollTop = textbox.scrollHeight;
-            renderPending = false;
-          });
-        }
-      };
+      // Initial application ignition
+      initRecognition();
 
       actionBtn.addEventListener('click', () => {
         if (!shouldBeRecording) {
