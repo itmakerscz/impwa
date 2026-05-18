@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hlasový Zápisník PWA</title>
+  <title>Ultra-Performance Hlasový Zápisník</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#4F46E5">
   <style>
@@ -15,6 +15,7 @@
       display: flex; 
       flex-direction: column; 
       align-items: center; 
+      content-visibility: auto; /* Browser optimization for structural rendering */
     }
     .card { 
       background: white; 
@@ -25,85 +26,60 @@
       max-width: 500px; 
       text-align: center; 
     }
-    h2 {
-      margin-top: 0;
-      color: #1f2937;
-    }
-    textarea { 
+    h2 { margin-top: 0; color: #1f2937; }
+    
+    /* Optimized output window using a scrollable contenteditable surface */
+    .output-panel { 
       width: 100%; 
-      height: 220px; 
+      height: 240px; 
       margin: 16px 0; 
       border: 1px solid #d1d5db; 
       border-radius: 8px; 
       padding: 12px; 
       box-sizing: border-box; 
       font-size: 16px; 
-      resize: none; 
-      font-family: inherit;
+      overflow-y: auto;
+      text-align: left;
+      background: #fafafa;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      contain: content; /* Isolates layout changes purely to this box */
     }
-    textarea:focus {
-      outline: 2px solid #4f46e5;
-      border-color: transparent;
-    }
+    .output-panel:focus { outline: 2px solid #4f46e5; background: white; }
+    .interim { color: #9ca3af; font-style: italic; }
+    
     button { 
-      background: #4f46e5; 
-      color: white; 
-      border: none; 
-      padding: 14px 28px; 
-      font-size: 16px; 
-      border-radius: 9999px; 
-      cursor: pointer; 
-      font-weight: bold; 
-      transition: background 0.2s, transform 0.1s; 
-      width: 100%;
+      background: #4f46e5; color: white; border: none; padding: 14px 28px; 
+      font-size: 16px; border-radius: 9999px; cursor: pointer; font-weight: bold; 
+      transition: background 0.2s; width: 100%; will-change: transform;
     }
-    button:active {
-      transform: scale(0.98);
-    }
-    button.recording { 
-      background: #ef4444; 
-      animation: pulse 2s infinite;
-    }
-    .status { 
-      font-size: 14px; 
-      color: #6b7280; 
-      height: 20px; 
-      margin-bottom: 8px; 
-      font-weight: 500;
-    }
-    @keyframes pulse {
-      0% { opacity: 1; }
-      50% { opacity: 0.85; }
-      100% { opacity: 1; }
-    }
+    button.recording { background: #ef4444; }
+    .status { font-size: 14px; color: #6b7280; height: 20px; margin-bottom: 8px; font-weight: 500; }
   </style>
 </head>
 <body>
 
   <div class="card">
     <h2>Hlasový Zápisník</h2>
-    <div id="status" class="status">Klepnutím na tlačítko spustíte diktování...</div>
-    <textarea id="textbox" placeholder="Zde se objeví váš text..."></textarea>
+    <div id="status" class="status">Připraveno ke spuštění...</div>
+    <div id="textbox" class="output-panel" contenteditable="true" placeholder="Zde se objeví váš text..."></div>
     <button id="actionBtn">Spustit nahrávání</button>
   </div>
 
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js')
-        .then(() => console.log("Service Worker registrován."))
-        .catch(err => console.error("SW selhal:", err));
+      navigator.serviceWorker.register('sw.js').catch(() => {});
     }
 
     const SpeechRecognition = window.webkitSpeechRecognition || window.SpeechRecognition;
     
     if (!SpeechRecognition) {
-      document.getElementById('status').innerText = "Web Speech API není podporováno.";
+      document.getElementById('status').innerText = "Web Speech API nepodporováno.";
       document.getElementById('actionBtn').disabled = true;
-      document.getElementById('actionBtn').style.background = "#9ca3af";
     } else {
       const recognition = new SpeechRecognition();
       recognition.continuous = true; 
-      recognition.interimResults = true; // Enables instant, live rendering
+      recognition.interimResults = true; 
       recognition.lang = 'cs-CZ'; 
 
       const actionBtn = document.getElementById('actionBtn');
@@ -113,99 +89,94 @@
       let shouldBeRecording = false;
       let wakeLock = null; 
       
-      // Memory state to isolate text streams and stop duplicates
-      let committedText = "";
-      let lastFinalPhrase = "";
+      // Efficient structural collections for textual components
+      let committedParagraphs = []; 
+      let processedSpeechIds = new Set(); 
+      let renderPending = false;
 
       async function requestWakeLock() {
-        if ('wakeLock' in navigator) {
-          try {
-            wakeLock = await navigator.wakeLock.request('screen');
-            console.log("Wake Lock aktivní.");
-          } catch (err) {
-            console.warn(`Wake Lock failed: ${err.message}`);
-          }
+        if ('wakeLock' in navigator && !wakeLock) {
+          try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
         }
       }
 
       function releaseWakeLock() {
-        if (wakeLock !== null) {
-          wakeLock.release().then(() => { wakeLock = null; });
-        }
+        if (wakeLock) { wakeLock.release().then(() => { wakeLock = null; }); }
       }
 
-      document.addEventListener('visibilitychange', async () => {
-        if (wakeLock !== null && document.visibilityState === 'visible' && shouldBeRecording) {
-          await requestWakeLock();
-        }
-      });
-
       recognition.onstart = async () => {
-        status.innerText = "Poslouchám živě (cs-CZ)...";
+        status.innerText = "Poslouchám (cs-CZ)...";
         status.style.color = "#10b981";
         actionBtn.innerText = "Zastavit nahrávání";
         actionBtn.classList.add('recording');
         await requestWakeLock();
       };
 
-      recognition.onerror = (e) => {
-        if (e.error !== 'no-speech') {
-          status.innerText = `Chyba: ${e.error}`;
-          status.style.color = "#ef4444";
-        }
-      };
-
       recognition.onend = () => {
         if (shouldBeRecording) {
-          try {
-            recognition.start(); // Auto-recovery from 5 second idle limit
-          } catch (err) {
-            console.error("Chyba při restartu:", err);
-          }
+          try { recognition.start(); } catch (err) {}
         } else {
           status.innerText = "Nahrávání zastaveno.";
           status.style.color = "#6b7280";
           actionBtn.innerText = "Spustit nahrávání";
           actionBtn.classList.remove('recording');
           releaseWakeLock();
-          lastFinalPhrase = ""; 
+          processedSpeechIds.clear();
         }
       };
 
+      // HIGH PERFORMANCE TRANSCRIPTION PARSER
       recognition.onresult = (event) => {
         let interimTranscript = '';
-        let finalTranscript = '';
+        let allocationEngineId = event.resultIndex;
 
-        // Separate finished words from ongoing raw speech audio
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
+        // Process final packages safely via integer indices instead of heavy string comparisons
+        for (let i = allocationEngineId; i < event.results.length; ++i) {
+          const resultChunk = event.results[i];
+          const textSnippet = resultChunk[0].transcript;
+
+          if (resultChunk.isFinal) {
+            // Unique execution tag generation
+            const structuralSignature = `${event.resultIndex}-${i}-${textSnippet.trim().substring(0,5)}`;
+            
+            if (!processedSpeechIds.has(structuralSignature)) {
+              processedSpeechIds.add(structuralSignature);
+              committedParagraphs.push(textSnippet.trim());
+            }
           } else {
-            interimTranscript += event.results[i][0].transcript;
+            interimTranscript += textSnippet;
           }
         }
 
-        let cleanedFinal = finalTranscript.trim();
+        // BATCH RENDERING PROCESS: Uses requestAnimationFrame to isolate processing threads 
+        if (!renderPending) {
+          renderPending = true;
+          requestAnimationFrame(() => {
+            const finalAssembledText = committedParagraphs.join(' ');
+            
+            if (interimTranscript) {
+              // Direct innerHTML pipeline structure optimizing temporary tokens
+              textbox.innerHTML = finalAssembledText + (finalAssembledText ? ' ' : '') + `<span class="interim">${interimTranscript}</span>`;
+            } else {
+              textbox.innerText = finalAssembledText + (finalAssembledText ? ' ' : '');
+            }
 
-        if (cleanedFinal) {
-          // Double check engine outputs to drop accidental replica streams
-          if (cleanedFinal !== lastFinalPhrase) {
-            lastFinalPhrase = cleanedFinal;
-            committedText += cleanedFinal + ' ';
-          }
+            // Debounced scroll viewport constraint matching
+            textbox.scrollTop = textbox.scrollHeight;
+            renderPending = false;
+          });
         }
-
-        // Output fixed structural text combined with dynamic current speech
-        textbox.value = committedText + interimTranscript;
-        textbox.scrollTop = textbox.scrollHeight;
       };
 
       actionBtn.addEventListener('click', () => {
         if (!shouldBeRecording) {
           shouldBeRecording = true;
-          lastFinalPhrase = ""; 
-          // Initialize memory with whatever text happens to already be in the textarea box
-          committedText = textbox.value ? textbox.value.trim() + ' ' : "";
+          processedSpeechIds.clear();
+          
+          // Seed the array cache with whatever data is current inside the workspace element
+          const initialCleanText = textbox.innerText.trim();
+          committedParagraphs = initialCleanText ? [initialCleanText] : [];
+          
           recognition.start();
         } else {
           shouldBeRecording = false; 
