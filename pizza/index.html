@@ -46,7 +46,7 @@
     }
     .output-panel:focus { outline: 2px solid #4f46e5; background: white; }
     
-    /* Native placeholder solution for contenteditable containers */
+    /* Native placeholder support for contenteditable panels */
     .output-panel:empty::before {
       content: attr(placeholder);
       color: #9ca3af;
@@ -69,7 +69,6 @@
   <div class="card">
     <h2>Hlasový Zápisník</h2>
     <div id="status" class="status">Připraveno ke spuštění...</div>
-    <!-- Cleaned container: Split user editable text from the unstable raw audio container -->
     <div id="textbox" class="output-panel" contenteditable="true" placeholder="Zde se objeví váš text..."><span id="committedText"></span><span id="interimText" class="interim" contenteditable="false"></span></div>
     <button id="actionBtn">Spustit nahrávání</button>
   </div>
@@ -100,25 +99,21 @@
       let wakeLock = null; 
       
       let committedParagraphs = []; 
-      let uniquePhrasesMemory = new Set(); 
       let renderPending = false;
 
       async function requestWakeLock() {
         if ('wakeLock' in navigator && !wakeLock) {
-          try { 
-            wakeLock = await navigator.wakeLock.request('screen'); 
-            console.log("Wake Lock acquired successfully.");
-          } catch (e) {}
+          try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
         }
       }
 
       function releaseWakeLock() {
         if (wakeLock) { 
-          wakeLock.release().then(() => { wakeLock = null; console.log("Wake Lock released."); }); 
+          wakeLock.release().then(() => { wakeLock = null; }); 
         }
       }
 
-      // Restored Safety Hook: Re-acquires wake lock if the app goes out of view and comes back
+      // Re-acquire wake lock automatically when the app comes back to the foreground
       document.addEventListener('visibilitychange', async () => {
         if (wakeLock !== null && document.visibilityState === 'visible' && shouldBeRecording) {
           await requestWakeLock();
@@ -142,9 +137,22 @@
           actionBtn.innerText = "Spustit nahrávání";
           actionBtn.classList.remove('recording');
           releaseWakeLock();
-          interimSpan.innerText = ""; // Empty live buffer instantly on stop
+          interimSpan.innerText = ""; 
         }
       };
+
+      // Compares sentences to catch streaming overlaps or direct phrase repetitions
+      function getSimilarity(str1, str2) {
+        const s1 = str1.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+        const s2 = str2.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+        if (s1 === s2) return 1.0;
+        if (!s1 || !s2) return 0.0;
+        
+        if (s1.includes(s2) && s1.length < s2.length + 5) return 0.9;
+        if (s2.includes(s1) && s2.length < s1.length + 5) return 0.9;
+        
+        return 0.0;
+      }
 
       recognition.onresult = (event) => {
         let interimTranscript = '';
@@ -152,21 +160,30 @@
 
         for (let i = startIdx; i < event.results.length; ++i) {
           const resultChunk = event.results[i];
+          
+          // Drop low confidence audio fragments/line-pops during pauses
+          if (resultChunk[0].confidence === 0 && resultChunk.isFinal) {
+            continue;
+          }
+
           const textSnippet = resultChunk[0].transcript.trim();
 
           if (resultChunk.isFinal && textSnippet) {
-            const standardizedText = textSnippet.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+            let isGhostDuplicate = false;
+            // Scan only the last 3 parsed items to prevent duplicating words you intentionally repeat
+            const lookbackWindow = committedParagraphs.slice(-3); 
             
-            if (!uniquePhrasesMemory.has(standardizedText)) {
-              uniquePhrasesMemory.add(standardizedText);
-              committedParagraphs.push(resultChunk[0].transcript.trim());
-              
-              if (uniquePhrasesMemory.size > 100) {
-                const firstValue = uniquePhrasesMemory.values().next().value;
-                uniquePhrasesMemory.delete(firstValue);
+            for (let pastSentence of lookbackWindow) {
+              if (getSimilarity(pastSentence, textSnippet) > 0.85) {
+                isGhostDuplicate = true;
+                break;
               }
+            }
+
+            if (!isGhostDuplicate) {
+              committedParagraphs.push(textSnippet);
             } else {
-              console.log("Ignored system ghost duplicate:", textSnippet);
+              console.warn("Blocked Browser Ghost Duplicate: ", textSnippet);
             }
           } else if (!resultChunk.isFinal) {
             interimTranscript += resultChunk[0].transcript;
@@ -178,7 +195,7 @@
           requestAnimationFrame(() => {
             const finalAssembledText = committedParagraphs.join(' ');
             
-            // Critical Fix: Update text nodes directly to avoid resetting the typing cursor caret
+            // Updates underlying DOM nodes directly so text selection and caret positions don't tear
             committedSpan.innerText = finalAssembledText + (finalAssembledText ? ' ' : '');
             interimSpan.innerText = interimTranscript;
 
@@ -191,14 +208,10 @@
       actionBtn.addEventListener('click', () => {
         if (!shouldBeRecording) {
           shouldBeRecording = true;
-          uniquePhrasesMemory.clear();
           
-          // Grabs only text characters, ignoring the HTML nodes inside
           const initialCleanText = committedSpan.innerText.trim() || textbox.innerText.replace(interimSpan.innerText, "").trim();
           if (initialCleanText) {
             committedParagraphs = [initialCleanText];
-            const seedKey = initialCleanText.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
-            uniquePhrasesMemory.add(seedKey);
           } else {
             committedParagraphs = [];
           }
