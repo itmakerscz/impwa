@@ -15,7 +15,7 @@
       display: flex; 
       flex-direction: column; 
       align-items: center; 
-      content-visibility: auto; /* Browser optimization for structural rendering */
+      content-visibility: auto; 
     }
     .card { 
       background: white; 
@@ -28,7 +28,6 @@
     }
     h2 { margin-top: 0; color: #1f2937; }
     
-    /* Optimized output window using a scrollable contenteditable surface */
     .output-panel { 
       width: 100%; 
       height: 240px; 
@@ -43,7 +42,7 @@
       background: #fafafa;
       white-space: pre-wrap;
       word-wrap: break-word;
-      contain: content; /* Isolates layout changes purely to this box */
+      contain: content; 
     }
     .output-panel:focus { outline: 2px solid #4f46e5; background: white; }
     .interim { color: #9ca3af; font-style: italic; }
@@ -89,9 +88,10 @@
       let shouldBeRecording = false;
       let wakeLock = null; 
       
-      // Efficient structural collections for textual components
       let committedParagraphs = []; 
-      let processedSpeechIds = new Set(); 
+      // Set to track recent textual phrases to catch ghost duplicates
+      let uniquePhrasesMemory = new Set(); 
+
       let renderPending = false;
 
       async function requestWakeLock() {
@@ -121,47 +121,52 @@
           actionBtn.innerText = "Spustit nahrávání";
           actionBtn.classList.remove('recording');
           releaseWakeLock();
-          processedSpeechIds.clear();
         }
       };
 
-      // HIGH PERFORMANCE TRANSCRIPTION PARSER
       recognition.onresult = (event) => {
         let interimTranscript = '';
-        let allocationEngineId = event.resultIndex;
+        let startIdx = event.resultIndex;
 
-        // Process final packages safely via integer indices instead of heavy string comparisons
-        for (let i = allocationEngineId; i < event.results.length; ++i) {
+        for (let i = startIdx; i < event.results.length; ++i) {
           const resultChunk = event.results[i];
-          const textSnippet = resultChunk[0].transcript;
+          const textSnippet = resultChunk[0].transcript.trim();
 
-          if (resultChunk.isFinal) {
-            // Unique execution tag generation
-            const structuralSignature = `${event.resultIndex}-${i}-${textSnippet.trim().substring(0,5)}`;
+          if (resultChunk.isFinal && textSnippet) {
+            // Normalizing text string for strict comparison
+            const standardizedText = textSnippet.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
             
-            if (!processedSpeechIds.has(structuralSignature)) {
-              processedSpeechIds.add(structuralSignature);
-              committedParagraphs.push(textSnippet.trim());
+            // ANTI-DUPLICATION ENGINE:
+            // Check if this exact text sequence already exists in our active memory cache
+            if (!uniquePhrasesMemory.has(standardizedText)) {
+              uniquePhrasesMemory.add(standardizedText);
+              committedParagraphs.push(resultChunk[0].transcript.trim());
+              
+              // Keep memory light. If it exceeds 100 entries, drop the oldest phrase tracker
+              if (uniquePhrasesMemory.size > 100) {
+                const firstValue = uniquePhrasesMemory.values().next().value;
+                uniquePhrasesMemory.delete(firstValue);
+              }
+            } else {
+              console.log("Ignored system ghost duplicate:", textSnippet);
             }
-          } else {
-            interimTranscript += textSnippet;
+          } else if (!resultChunk.isFinal) {
+            interimTranscript += resultChunk[0].transcript;
           }
         }
 
-        // BATCH RENDERING PROCESS: Uses requestAnimationFrame to isolate processing threads 
+        // Optimized rendering thread pipeline via requestAnimationFrame
         if (!renderPending) {
           renderPending = true;
           requestAnimationFrame(() => {
             const finalAssembledText = committedParagraphs.join(' ');
             
             if (interimTranscript) {
-              // Direct innerHTML pipeline structure optimizing temporary tokens
               textbox.innerHTML = finalAssembledText + (finalAssembledText ? ' ' : '') + `<span class="interim">${interimTranscript}</span>`;
             } else {
               textbox.innerText = finalAssembledText + (finalAssembledText ? ' ' : '');
             }
 
-            // Debounced scroll viewport constraint matching
             textbox.scrollTop = textbox.scrollHeight;
             renderPending = false;
           });
@@ -171,11 +176,17 @@
       actionBtn.addEventListener('click', () => {
         if (!shouldBeRecording) {
           shouldBeRecording = true;
-          processedSpeechIds.clear();
+          uniquePhrasesMemory.clear();
           
-          // Seed the array cache with whatever data is current inside the workspace element
           const initialCleanText = textbox.innerText.trim();
-          committedParagraphs = initialCleanText ? [initialCleanText] : [];
+          if (initialCleanText) {
+            committedParagraphs = [initialCleanText];
+            // Seed memory with existing text so we don't copy it back over
+            const seedKey = initialCleanText.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g,"");
+            uniquePhrasesMemory.add(seedKey);
+          } else {
+            committedParagraphs = [];
+          }
           
           recognition.start();
         } else {
