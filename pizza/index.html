@@ -1,96 +1,179 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="cs">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VoiceNote PWA</title>
+  <title>Hlasový Zápisník PWA</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#4F46E5">
   <style>
-    body { font-family: system-ui, sans-serif; background: #f3f4f6; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-    .card { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
-    textarea { width: 100%; height: 200px; margin: 16px 0; border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; box-sizing: border-box; font-size: 16px; resize: none; }
-    button { background: #4f46e5; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 9999px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
-    button.recording { background: #ef4444; }
-    .status { font-size: 14px; color: #6b7280; height: 20px; margin-bottom: 8px; }
+    body { 
+      font-family: system-ui, -apple-system, sans-serif; 
+      background: #f3f4f6; 
+      margin: 0; 
+      padding: 20px; 
+      display: flex; 
+      flex-direction: column; 
+      align-items: center; 
+    }
+    .card { 
+      background: white; 
+      padding: 24px; 
+      border-radius: 12px; 
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); 
+      width: 100%; 
+      max-width: 500px; 
+      text-align: center; 
+    }
+    h2 {
+      margin-top: 0;
+      color: #1f2937;
+    }
+    textarea { 
+      width: 100%; 
+      height: 220px; 
+      margin: 16px 0; 
+      border: 1px solid #d1d5db; 
+      border-radius: 8px; 
+      padding: 12px; 
+      box-sizing: border-box; 
+      font-size: 16px; 
+      resize: none; 
+      font-family: inherit;
+    }
+    textarea:focus {
+      outline: 2px solid #4f46e5;
+      border-color: transparent;
+    }
+    button { 
+      background: #4f46e5; 
+      color: white; 
+      border: none; 
+      padding: 14px 28px; 
+      font-size: 16px; 
+      border-radius: 9999px; 
+      cursor: pointer; 
+      font-weight: bold; 
+      transition: background 0.2s, transform 0.1s; 
+      width: 100%;
+    }
+    button:active {
+      transform: scale(0.98);
+    }
+    button.recording { 
+      background: #ef4444; 
+      animation: pulse 2s infinite;
+    }
+    .status { 
+      font-size: 14px; 
+      color: #6b7280; 
+      height: 20px; 
+      margin-bottom: 8px; 
+      font-weight: 500;
+    }
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.85; }
+      100% { opacity: 1; }
+    }
   </style>
 </head>
 <body>
 
   <div class="card">
-    <h2>VoiceNote PWA</h2>
-    <div id="status" class="status">Click start to dictate...</div>
-    <textarea id="textbox" placeholder="Your speech will appear here..."></textarea>
-    <button id="actionBtn">Start Recording</button>
+    <h2>Hlasový Zápisník</h2>
+    <div id="status" class="status">Klepnutím na tlačítko spustíte diktování...</div>
+    <textarea id="textbox" placeholder="Zde se objeví váš text..."></textarea>
+    <button id="actionBtn">Spustit nahrávání</button>
   </div>
 
   <script>
     // Register the Service Worker for PWA compliance
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').catch(err => console.error("SW failed", err));
+      navigator.serviceWorker.register('sw.js')
+        .then(() => console.log("Service Worker registrován úspěšně."))
+        .catch(err => console.error("Registrace SW selhala:", err));
     }
 
-    // Speech Recognition Logic
+    // Initialize Web Speech API
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     
     if (!SpeechRecognition) {
-      document.getElementById('status').innerText = "Web Speech API not supported in this browser.";
+      document.getElementById('status').innerText = "Web Speech API není v tomto prohlížeči podporováno.";
       document.getElementById('actionBtn').disabled = true;
+      document.getElementById('actionBtn').style.background = "#9ca3af";
     } else {
       const recognition = new SpeechRecognition();
-      recognition.continuous = true; // Keep listening even if user pauses
-      recognition.interimResults = true; // Show text *while* speaking
-      recognition.lang = 'cs-CZ';
+      recognition.continuous = true; 
+      recognition.interimResults = true; 
+      recognition.lang = 'cs-CZ'; // Configured for Czech language
 
       const actionBtn = document.getElementById('actionBtn');
       const textbox = document.getElementById('textbox');
       const status = document.getElementById('status');
-      let isRecording = false;
+      
+      // State tracker to fight Android's aggressive auto-timeout feature
+      let shouldBeRecording = false;
 
       recognition.onstart = () => {
-        status.innerText = "Listening actively...";
-        actionBtn.innerText = "Stop Recording";
+        status.innerText = "Poslouchám actively (cs-CZ)...";
+        status.style.color = "#10b981";
+        actionBtn.innerText = "Zastavit nahrávání";
         actionBtn.classList.add('recording');
       };
 
       recognition.onerror = (e) => {
-        status.innerText = `Error: ${e.error}`;
-        stopListening();
+        // 'no-speech' is triggered when the user pauses talking. 
+        // We log it silently because the onend loop will kick start it right back up.
+        if (e.error === 'no-speech') {
+          console.log("Detekováno ticho. Automatický restart to vyřeší...");
+        } else {
+          status.innerText = `Chyba: ${e.error}`;
+          status.style.color = "#ef4444";
+        }
       };
 
       recognition.onend = () => {
-        status.innerText = "Stopped listening.";
-        stopListening();
+        // If the mic shut down structurally but the user DID NOT click stop, force-reboot it
+        if (shouldBeRecording) {
+          console.log("Obcházení limitu Androidu: Restartování mikrofonu...");
+          try {
+            recognition.start();
+          } catch (err) {
+            console.error("Chyba při restartu:", err);
+          }
+        } else {
+          status.innerText = "Nahrávání zastaveno.";
+          status.style.color = "#6b7280";
+          actionBtn.innerText = "Spustit nahrávání";
+          actionBtn.classList.remove('recording');
+        }
       };
 
       recognition.onresult = (event) => {
-        let interimTranscript = '';
         let finalTranscript = '';
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
             finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
           }
         }
-        // Append final results to the textbox
-        if (finalTranscript) textbox.value += finalTranscript + ' ';
+        
+        // Append transcribed text cleanly with trailing whitespace
+        if (finalTranscript) {
+          textbox.value += finalTranscript + ' ';
+          // Auto-scroll textarea to bottom as text populates
+          textbox.scrollTop = textbox.scrollHeight;
+        }
       };
 
-      function stopListening() {
-        recognition.stop();
-        isRecording = false;
-        actionBtn.innerText = "Start Recording";
-        actionBtn.classList.remove('recording');
-      }
-
       actionBtn.addEventListener('click', () => {
-        if (!isRecording) {
+        if (!shouldBeRecording) {
+          shouldBeRecording = true;
           recognition.start();
-          isRecording = true;
         } else {
-          stopListening();
+          shouldBeRecording = false; // User clicked manually, gracefully power down
+          recognition.stop();
         }
       });
     }
