@@ -71,7 +71,8 @@ export const saveOrder = async (order) => {
     const data = {
         ...order,
         created_at: new Date().toISOString(),
-        status: 'pending'
+        status: 'pending',
+        sort_order: Date.now() // Initialize with timestamp for default sequential sorting
     };
     const orderId = await execute(STORE_NAME, 'readwrite', store => store.add(data));
     await incrementDailyStats(order.category || 'pizza');

@@ -43,7 +43,8 @@
                     volume,
                     unassignedOrders, couriers, routes,
                     formatTime,
-                    menuItems
+                    menuItems,
+                    selectedOrderIds
                 }"
                 @toggle-listening="toggleListening"
                 @confirm-order="handleConfirmOrder"
@@ -56,6 +57,8 @@
                 @start-scanner="startScanner"
                 @stop-scanner="stopScanner"
                 @create-route="createRoute"
+                @toggle-order-selection="toggleOrderSelection"
+                @reorder="handleReorder"
             ></component>
 
             <!-- Operator Sandbox / Debug Logs -->

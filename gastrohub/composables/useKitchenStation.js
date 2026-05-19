@@ -7,6 +7,8 @@ const { computed, ref, onMounted, onBeforeUnmount } = Vue;
 export function useKitchenStation({ dbOrders, loadOrders }) {
     const { speak } = useSpeech();
     let tickerInterval = null;
+    let kitchenWorker = null;
+    const STATION_CAPACITY = 8;
 
     // Computed properties for filtering orders by status and type
     const pendingPizzaOrders = computed(() => dbOrders.value.filter(o => (!o.status || o.status === 'pending') && o.category === 'pizza'));
@@ -61,37 +63,40 @@ export function useKitchenStation({ dbOrders, loadOrders }) {
         await loadOrders(); // Refresh global orders
     };
 
-    // Global Ticker for countdowns
     const startKitchenTicker = () => {
-        tickerInterval = setInterval(() => {
-            dbOrders.value.forEach(order => {
-                // Pizza countdown
-                if (order.status === 'baking' && order.pizzaStartedAt && order.pizzaTotal) {
-                    const elapsed = Math.floor((Date.now() - order.pizzaStartedAt) / 1000);
-                    const remaining = Math.max(0, order.pizzaTotal - elapsed);
-                    
-                    if (order.pizzaRemaining !== remaining) {
-                        order.pizzaRemaining = remaining;
-                        order.pizzaProgress = Math.round(((order.pizzaTotal - remaining) / order.pizzaTotal) * 100);
-                    }
+        // Inicializace Web Workeru
+        kitchenWorker = new Worker(new URL('../kitchen-worker.js', import.meta.url));
 
-                    if (remaining === 0 && !order.pizzaAlerted) {
-                        speak(`Pizza: Objednávka ${order.item} je hotová!`);
-                        order.pizzaAlerted = true; // Prevent repeated alerts
-                    }
+        kitchenWorker.onmessage = (e) => {
+            const { updatedOrders, alerts } = e.data;
+            
+            // Synchronizace vypočtených dat zpět do reaktivního pole
+            updatedOrders.forEach(newO => {
+                const oldO = dbOrders.value.find(o => o.id === newO.id);
+                if (oldO) {
+                    oldO.estimatedWait = newO.estimatedWait;
+                    oldO.pizzaRemaining = newO.pizzaRemaining;
+                    oldO.pizzaProgress = newO.pizzaProgress;
+                    oldO.pizzaAlerted = newO.pizzaAlerted;
+                    oldO.grillRemaining = newO.grillRemaining;
+                    oldO.grillProgress = newO.grillProgress;
+                    oldO.grillAlerted = newO.grillAlerted;
                 }
-                // Grill countdown
-                if (order.status === 'grilling' && order.grillStartedAt && order.grillTotal) {
-                    const elapsed = Math.floor((Date.now() - order.grillStartedAt) / 1000);
-                    const remaining = Math.max(0, order.grillTotal - elapsed);
-                    // Update reactive property for UI, but don't persist every second
-                    order.grillRemaining = remaining;
-                    order.grillProgress = Math.round(((order.grillTotal - remaining) / order.grillTotal) * 100);
-                    if (remaining === 0 && !order.grillAlerted) {
-                        speak(`Gril: Objednávka ${order.item} je hotová!`);
-                        order.grillAlerted = true; // Prevent repeated alerts
-                    }
-                }
+            });
+
+            // Zpracování hlasových upozornění vygenerovaných workerem
+            alerts.forEach(alert => {
+                const prefix = alert.type === 'pizza' ? 'Pizza' : 'Gril';
+                speak(`${prefix}: Objednávka ${alert.item || ''} je hotová!`);
+            });
+        };
+
+        tickerInterval = setInterval(() => {
+            if (!dbOrders.value.length) return;
+            kitchenWorker.postMessage({
+                orders: JSON.parse(JSON.stringify(dbOrders.value)),
+                now: Date.now(),
+                capacity: STATION_CAPACITY
             });
         }, 1000);
     };
@@ -99,6 +104,7 @@ export function useKitchenStation({ dbOrders, loadOrders }) {
     onMounted(startKitchenTicker);
     onBeforeUnmount(() => {
         if (tickerInterval) clearInterval(tickerInterval);
+        if (kitchenWorker) kitchenWorker.terminate();
     });
 
     return {

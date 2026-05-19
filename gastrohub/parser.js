@@ -1,33 +1,33 @@
 // parser.js
 export const PIZZA_MENU = [
-    { id: 1, name: "Margherita", category: "pizza", prepTime: 300 },
-    { id: 2, name: "Šunková", category: "pizza", prepTime: 300 },
-    { id: 3, name: "Slaninová", category: "pizza", prepTime: 300 },
-    { id: 4, name: "Quatro", category: "pizza", prepTime: 300 },
-    { id: 5, name: "Salamová", category: "pizza", prepTime: 300 },
-    { id: 6, name: "Fungi", category: "pizza", prepTime: 300 },
-    { id: 7, name: "Hawai", category: "pizza", prepTime: 300, aliases: ["Hawaii", "Havaj", "Havai", "Havaji"] },
-    { id: 8, name: "Roma", category: "pizza", prepTime: 300 },
-    { id: 9, name: "Trentino", category: "pizza", prepTime: 300 },
-    { id: 10, name: "Spinaci", category: "pizza", prepTime: 300 },
-    { id: 11, name: "Vegeteriana", category: "pizza", prepTime: 300 },
-    { id: 12, name: "Mista", category: "pizza", prepTime: 300 },
-    { id: 13, name: "Capricciosa", category: "pizza", prepTime: 300 },
-    { id: 14, name: "Monda", category: "pizza", prepTime: 300 },
-    { id: 15, name: "Vasco", category: "pizza", prepTime: 300 },
-    { id: 16, name: "Diavola", category: "pizza", prepTime: 300 },
-    { id: 17, name: "Parma", category: "pizza", prepTime: 300 },
-    { id: 18, name: "Pollo", category: "pizza", prepTime: 300 },
-    { id: 19, name: "Frida", category: "pizza", prepTime: 300 },
-    { id: 20, name: "Messicana", category: "pizza", prepTime: 300 },
-    { id: 21, name: "Picante", category: "pizza", prepTime: 300 },
+    { id: 1, name: "Margherita", category: "pizza", prepTime: 300, price: 159 },
+    { id: 2, name: "Šunková", category: "pizza", prepTime: 300, price: 179 },
+    { id: 3, name: "Slaninová", category: "pizza", prepTime: 300, price: 189 },
+    { id: 4, name: "Quatro", category: "pizza", prepTime: 300, price: 199 },
+    { id: 5, name: "Salamová", category: "pizza", prepTime: 300, price: 189 },
+    { id: 6, name: "Fungi", category: "pizza", prepTime: 300, price: 179 },
+    { id: 7, name: "Hawai", category: "pizza", prepTime: 300, price: 189, aliases: ["Hawaii", "Havaj", "Havai", "Havaji"] },
+    { id: 8, name: "Roma", category: "pizza", prepTime: 300, price: 185 },
+    { id: 9, name: "Trentino", category: "pizza", prepTime: 300, price: 189 },
+    { id: 10, name: "Spinaci", category: "pizza", prepTime: 300, price: 179 },
+    { id: 11, name: "Vegeteriana", category: "pizza", prepTime: 300, price: 189 },
+    { id: 12, name: "Mista", category: "pizza", prepTime: 300, price: 195 },
+    { id: 13, name: "Capricciosa", category: "pizza", prepTime: 300, price: 189 },
+    { id: 14, name: "Monda", category: "pizza", prepTime: 300, price: 199 },
+    { id: 15, name: "Vasco", category: "pizza", prepTime: 300, price: 205 },
+    { id: 16, name: "Diavola", category: "pizza", prepTime: 300, price: 195 },
+    { id: 17, name: "Parma", category: "pizza", prepTime: 300, price: 215 },
+    { id: 18, name: "Pollo", category: "pizza", prepTime: 300, price: 195 },
+    { id: 19, name: "Frida", category: "pizza", prepTime: 300, price: 189 },
+    { id: 20, name: "Messicana", category: "pizza", prepTime: 300, price: 199 },
+    { id: 21, name: "Picante", category: "pizza", prepTime: 300, price: 199 },
     // Grill items
-    { id: 101, name: "Grilované kuře", category: "grill", prepTime: 1200, aliases: ["kuře", "půlka", "čtvrtka", "grilka", "kure"] },
-    { id: 102, name: "Mix gril", category: "grill", prepTime: 900, aliases: ["mix", "talíř", "gril mix", "masový mix", "talir"] },
-    { id: 103, name: "Grilovaná žebra", category: "grill", prepTime: 1500, aliases: ["žebra", "žebírka", "vepřová žebra", "zebra", "zebirka"] },
-    { id: 104, name: "Grilované koleno", category: "grill", prepTime: 1800, aliases: ["koleno", "vepřové koleno", "zadní koleno", "veprove koleno"] },
-    { id: 105, name: "Burger menu", category: "grill", prepTime: 600, aliases: ["burger", "hambáč", "bulka", "cheeseburger", "hambac"] },
-    { id: 106, name: "Grilovaný hermelín", category: "grill", prepTime: 600, aliases: ["hermelín", "sýr na grilu", "hermos", "hermelin"] }
+    { id: 101, name: "Grilované kuře", category: "grill", prepTime: 1200, price: 249, aliases: ["kuře", "půlka", "čtvrtka", "grilka", "kure"] },
+    { id: 102, name: "Mix gril", category: "grill", prepTime: 900, price: 329, aliases: ["mix", "talíř", "gril mix", "masový mix", "talir"] },
+    { id: 103, name: "Grilovaná žebra", category: "grill", prepTime: 1500, price: 289, aliases: ["žebra", "žebírka", "vepřová žebra", "zebra", "zebirka"] },
+    { id: 104, name: "Grilované koleno", category: "grill", prepTime: 1800, price: 349, aliases: ["koleno", "vepřové koleno", "zadní koleno", "veprove koleno"] },
+    { id: 105, name: "Burger menu", category: "grill", prepTime: 600, price: 219, aliases: ["burger", "hambáč", "bulka", "cheeseburger", "hambac"] },
+    { id: 106, name: "Grilovaný hermelín", category: "grill", prepTime: 600, price: 169, aliases: ["hermelín", "sýr na grilu", "hermos", "hermelin"] }
 ];
 
 const CZECH_NUMBER_MAP = {
@@ -65,6 +65,7 @@ export const parseVoiceText = (text, userDictionary = [], customMenu = []) => {
     let address = "";
     let identifiedItems = [];
     let maxPrepTime = 0;
+    let totalPrice = 0;
 
     // Combine static menu with custom menu items
     const fullMenu = [...PIZZA_MENU, ...customMenu];
@@ -131,6 +132,7 @@ export const parseVoiceText = (text, userDictionary = [], customMenu = []) => {
                 
                 consolidatedItems[item.name] = (consolidatedItems[item.name] || 0) + quantity;
                 identifiedItems.push({ name: item.name, category: item.category });
+                totalPrice += (item.price || 0) * quantity;
                 
                 if (item.prepTime > maxPrepTime) maxPrepTime = item.prepTime;
             }
@@ -153,7 +155,8 @@ export const parseVoiceText = (text, userDictionary = [], customMenu = []) => {
         address: address || "Doplnit ručně",
         phone: phone || "Doplnit ručně",
         category: category,
-        prepTime: maxPrepTime || (category === 'pizza' ? 300 : 420)
+        prepTime: maxPrepTime || (category === 'pizza' ? 300 : 420),
+        price: totalPrice
     };
 };
 

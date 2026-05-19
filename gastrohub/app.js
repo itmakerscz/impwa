@@ -37,7 +37,11 @@ const app = createApp({
             try {
                 const data = await getAllOrders();
                 if (Array.isArray(data)) {
-                    dbOrders.value = data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                    dbOrders.value = data.sort((a, b) => {
+                        const sortA = a.sort_order || new Date(a.created_at).getTime();
+                        const sortB = b.sort_order || new Date(b.created_at).getTime();
+                        return sortA - sortB;
+                    });
                 }
             } catch (err) {
                 logToSandbox("Chyba synchronizace DB: " + err.message, 'error', loadGlobalOrders);
@@ -146,6 +150,22 @@ const app = createApp({
             });
         }
 
+        const handleReorder = async ({ draggedId, targetId }) => {
+            const draggedOrder = dbOrders.value.find(o => o.id === draggedId);
+            const targetOrder = dbOrders.value.find(o => o.id === targetId);
+            
+            if (draggedOrder && targetOrder) {
+                // Swap sort_order values to persist the new manual sequence
+                const tempSort = draggedOrder.sort_order || new Date(draggedOrder.created_at).getTime();
+                draggedOrder.sort_order = targetOrder.sort_order || new Date(targetOrder.created_at).getTime();
+                targetOrder.sort_order = tempSort;
+
+                await updateOrder(JSON.parse(JSON.stringify(draggedOrder)));
+                await updateOrder(JSON.parse(JSON.stringify(targetOrder)));
+                await loadGlobalOrders();
+            }
+        };
+
         const formatTime = (seconds) => {
             if (seconds <= 0) return "🔥 HOTOVO";
             const m = Math.floor(seconds / 60);
@@ -179,6 +199,7 @@ const app = createApp({
             dbOrders,
             loadGlobalOrders,
             formatTime,
+            handleReorder,
             debugLogs,
             // Kitchen Station
             ...kitchenStation,
@@ -225,21 +246,45 @@ app.component('NavButton', {
  * Handles state visualization for both Pizza and Grill stations.
  */
 app.component('KanbanColumn', {
-    props: ['title', 'orders', 'category', 'status', 'buttonText', 'buttonClass', 'formatTime'],
-    emits: ['action'],
+    props: {
+        title: { type: String, required: true },
+        orders: { type: Array, default: () => [] },
+        category: { 
+            type: String, 
+            required: true,
+            validator: value => ['pizza', 'grill'].includes(value)
+        },
+        status: { type: String, required: true },
+        buttonText: { type: String, default: 'Akce' },
+        buttonClass: { type: String, default: '' },
+        formatTime: { type: Function, default: (s) => s > 0 ? `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}` : "0:00" }
+    },
+    emits: ['action', 'reorder'],
     template: `
         <div class="col" :class="'font-' + status">
             <h4>{{ title }}</h4>
-            <div v-for="order in orders" :key="order.id" class="item-card" 
+            <div v-for="order in orders" :key="order.id" class="item-card"
+                 draggable="true"
+                 @dragstart="handleDragStart($event, order.id)"
+                 @dragover.prevent
+                 @drop="handleDrop($event, order.id)"
                  :class="{ 'target-done': status === 'done' }" 
                  :style="status !== 'done' ? { borderLeft: '5px solid ' + (category === 'pizza' ? '#e67e22' : '#c0392b') } : {}">
                 
-                <div v-if="status !== 'done'" style="float: right; font-size: 1.2rem;">
-                    {{ category === 'pizza' ? '🍕' : '🥩' }}
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <span style="font-weight: bold; color: #7f8c8d; font-size: 0.8rem;">#{{ order.id }}</span>
+                    <div v-if="status !== 'done'" style="font-size: 1.2rem;">
+                        {{ category === 'pizza' ? '🍕' : '🥩' }}
+                    </div>
                 </div>
                 
-                <h5>{{ order.item }}</h5>
+                <h5 style="margin-top: 5px;">{{ order.item }}</h5>
+                <div style="font-weight: bold; color: #2d3436; margin-bottom: 8px;">{{ order.price }} Kč</div>
                 
+                <div v-if="status === 'pizza' || status === 'grill'" style="font-size: 0.8rem; color: #7f8c8d; margin-bottom: 10px;">
+                    Čekání na slot: {{ formatTime(order.estimatedWait || 0) }}
+                </div>
+
                 <template v-if="status === 'baking' || status === 'grilling'">
                     <div class="timer" :style="category === 'grill' ? { color: '#c0392b' } : {}">
                         {{ formatTime(category === 'pizza' ? order.pizzaRemaining : order.grillRemaining) }}
@@ -259,6 +304,16 @@ app.component('KanbanColumn', {
     methods: {
         getProgress(order) {
             return (this.category === 'pizza' ? order.pizzaProgress : order.grillProgress) || 0;
+        },
+        handleDragStart(event, orderId) {
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', orderId);
+        },
+        handleDrop(event, targetId) {
+            const draggedId = parseInt(event.dataTransfer.getData('text/plain'));
+            if (draggedId && draggedId !== targetId) {
+                this.$emit('reorder', { draggedId, targetId });
+            }
         }
     }
 });
@@ -356,6 +411,7 @@ app.component('tab-rec', {
                     <input v-model="currentOrder.phone" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" placeholder="Zadejte telefon...">
                 </div>
                 <p style="font-size: 0.9rem;"><b>Stanice:</b> {{ currentOrder?.category === 'grill' ? '🥩 Gril' : '🍕 Pizza' }}</p>
+                <p style="font-size: 1.1rem; font-weight: bold; color: #2c3e50;">Celkem: {{ currentOrder?.price || 0 }} Kč</p>
                 <div style="display: flex; gap: 10px;">
                     <button @click="$emit('reset-order')" style="background: #95a5a6; color: white; border: none; padding: 10px 20px; font-weight: bold; flex: 1; border-radius: 4px; cursor: pointer;">🗑️ Vymazat</button>
                     <button @click="$emit('confirm-order')" style="background: #2ed573; color: white; border: none; padding: 10px 20px; font-weight: bold; flex: 2; border-radius: 4px; cursor: pointer;">💾 Schválit do výroby</button>
@@ -367,24 +423,24 @@ app.component('tab-rec', {
 
 app.component('tab-kitchen', {
     props: ['pendingPizzaOrders', 'bakingPizzaOrders', 'completedPizzaOrders', 'formatTime'],
-    emits: ['start-pizza-baking', 'finish-pizza-baking'],
+    emits: ['start-pizza-baking', 'finish-pizza-baking', 'reorder'],
     template: `
         <section class="station-grid">
-            <kanban-column title="⏳ K pečení (Pec)" :orders="pendingPizzaOrders" category="pizza" status="pizza" button-text="🔥 Sázet do pece" button-class="action-btn-pizza" @action="$emit('start-pizza-baking', $event)"></kanban-column>
+            <kanban-column title="⏳ K pečení (Pec)" :orders="pendingPizzaOrders" category="pizza" status="pizza" button-text="🔥 Sázet do pece" button-class="action-btn-pizza" :format-time="formatTime" @action="$emit('start-pizza-baking', $event)" @reorder="$emit('reorder', $event)"></kanban-column>
             <kanban-column title="🔥 V peci" :orders="bakingPizzaOrders" category="pizza" status="baking" button-text="✅ Vyndat" button-class="action-btn-success" :format-time="formatTime" @action="$emit('finish-pizza-baking', $event)"></kanban-column>
-            <kanban-column title="📦 Hotovo" :orders="completedPizzaOrders" category="pizza" status="done"></kanban-column>
+            <kanban-column title="📦 Hotovo" :orders="completedPizzaOrders" category="pizza" status="done" :format-time="formatTime"></kanban-column>
         </section>
     `
 });
 
 app.component('tab-grill', {
     props: ['pendingGrillOrders', 'grillingOrders', 'completedGrillOrders', 'formatTime'],
-    emits: ['start-grilling', 'finish-grilling'],
+    emits: ['start-grilling', 'finish-grilling', 'reorder'],
     template: `
         <section class="station-grid">
-            <kanban-column title="⏳ K přípravě (Gril)" :orders="pendingGrillOrders" category="grill" status="grill" button-text="🥩 Položit na gril" button-class="action-btn-grill" @action="$emit('start-grilling', $event)"></kanban-column>
+            <kanban-column title="⏳ K přípravě (Gril)" :orders="pendingGrillOrders" category="grill" status="grill" button-text="🥩 Položit na gril" button-class="action-btn-grill" :format-time="formatTime" @action="$emit('start-grilling', $event)" @reorder="$emit('reorder', $event)"></kanban-column>
             <kanban-column title="🥩 Na roštu" :orders="grillingOrders" category="grill" status="grilling" button-text="✅ Hotovo" button-class="action-btn-success" :format-time="formatTime" @action="$emit('finish-grilling', $event)"></kanban-column>
-            <kanban-column title="📦 Expedice Gril" :orders="completedGrillOrders" category="grill" status="done"></kanban-column>
+            <kanban-column title="📦 Expedice Gril" :orders="completedGrillOrders" category="grill" status="done" :format-time="formatTime"></kanban-column>
         </section>
     `
 });
@@ -411,19 +467,31 @@ app.component('tab-scanner', {
 });
 
 app.component('tab-routes', {
-    props: ['unassignedOrders', 'couriers', 'routes'],
-    emits: ['create-route'],
+    props: ['unassignedOrders', 'couriers', 'routes', 'selectedOrderIds'],
+    emits: ['create-route', 'toggle-order-selection'],
     template: `
         <section class="card">
             <h3>🗺️ Logistika a expedice tras</h3>
             <p>Hotová jídla připravená k odběru: <b>{{ unassignedOrders.length }} ks</b></p>
+
+            <div v-if="unassignedOrders.length > 0" style="margin: 15px 0;">
+                <p style="font-size: 0.9rem; color: #7f8c8d; margin-bottom: 10px;">Vyberte objednávky pro trasu:</p>
+                <div style="display: grid; gap: 8px; max-height: 200px; overflow-y: auto; padding: 5px; border: 1px solid #eee; border-radius: 4px;">
+                    <div v-for="order in unassignedOrders" :key="order.id" 
+                         @click="$emit('toggle-order-selection', order.id)"
+                         :style="{ padding: '10px', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', background: selectedOrderIds.includes(order.id) ? '#d1f2eb' : 'white', transition: 'background 0.2s' }">
+                        <input type="checkbox" :checked="selectedOrderIds.includes(order.id)" style="margin-right: 10px;">
+                        <b>#{{ order.id }}</b> — {{ order.item }} — <small>{{ order.address }}</small>
+                    </div>
+                </div>
+            </div>
             
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-top: 15px;">
                 <div v-for="courier in couriers" :key="courier.id" style="background: #f1f2f6; padding: 15px; border-radius: 6px; border: 1px solid #dcdde1;">
                     <h5>🚚 {{ courier.name }}</h5>
                     <p>Stav: <span style="color: #2ed573; font-weight: bold;">{{ courier.status }}</span></p>
-                    <button @click="$emit('create-route', courier)" :disabled="unassignedOrders.length === 0" style="background: #2c3e50; color: white; border: none; padding: 8px 12px; width: 100%; border-radius: 4px; cursor: pointer;">
-                        🗺️ Generovat trasu doručení
+                    <button @click="$emit('create-route', courier)" :disabled="selectedOrderIds.length === 0" style="background: #2c3e50; color: white; border: none; padding: 8px 12px; width: 100%; border-radius: 4px; cursor: pointer;">
+                        🗺️ Generovat trasu ({{ selectedOrderIds.length }})
                     </button>
                 </div>
             </div>
@@ -431,7 +499,7 @@ app.component('tab-routes', {
             <div v-if="routes.length > 0" style="margin-top: 25px;">
                 <h4>Aktivní trasy kurýrů na mapě</h4>
                 <div v-for="route in routes" :key="route.id" style="background: #e8f4fd; padding: 10px; margin-bottom: 8px; border-left: 4px solid #3498db; font-size: 0.9rem;">
-                    <b>Trasa #{{ route.id }}</b> — řidič: {{ route.courierName }} (Vezeno objednávek: {{ route.ordersCount }}) — <i>Stav: {{ route.status }}</i>
+                    <b>Trasa #{{ route.id }}</b> — řidič: {{ route.courierName }} ({{ route.ordersCount }} ks) — <b style="color: #2c3e50;">Hodnota: {{ route.totalValue }} Kč</b> — <i>Stav: {{ route.status }}</i>
                 </div>
             </div>
         </section>

@@ -139,7 +139,7 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
         }
 
         try {
-            await saveOrder({
+            const orderId = await saveOrder({
                 item: currentOrder.value.item,
                 address: currentOrder.value.address,
                 phone: currentOrder.value.phone,
@@ -159,7 +159,7 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
             });
             localStorage.setItem('gastrohub_item_stats', JSON.stringify(usage));
 
-            log('Objednávka byla úspěšně uložena do IndexedDB.', 'log');
+            log(`Objednávka #${orderId} byla úspěšně uložena do IndexedDB.`, 'log');
             resetOrder();
             await loadOrders(); // Osvěžení stavu pro kuchyň a pec
         } catch (err) {

@@ -9,36 +9,49 @@ export function useRouteManagement({ dbOrders, loadOrders, modal }) {
         { id: 2, name: 'Jakub (Skútr)', status: 'Volný' }
     ]);
     const routes = ref([]);
+    const selectedOrderIds = ref([]);
 
     const unassignedOrders = computed(() => 
         dbOrders.value.filter(o => o.status === 'completed_pizza' || o.status === 'completed_grill')
     );
 
+    const toggleOrderSelection = (id) => {
+        const index = selectedOrderIds.value.indexOf(id);
+        if (index > -1) {
+            selectedOrderIds.value.splice(index, 1);
+        } else {
+            selectedOrderIds.value.push(id);
+        }
+    };
+
     const createRoute = async (courier) => {
-        const ordersToAssign = unassignedOrders.value.map(o => o.id);
+        const ordersToAssign = unassignedOrders.value.filter(o => selectedOrderIds.value.includes(o.id));
         if (ordersToAssign.length === 0) {
-            if (modal) modal.alert("Prázdná expedice", "Žádné hotové zakázky k expedici.");
+            if (modal) modal.alert("Žádný výběr", "Prosím vyberte alespoň jednu objednávku k expedici.");
             return;
         }
+
+        const totalValue = ordersToAssign.reduce((sum, order) => sum + (order.price || 0), 0);
+        const orderIds = ordersToAssign.map(o => o.id);
 
         const newRoute = {
             id: routes.value.length + 1,
             courierName: courier.name,
             ordersCount: ordersToAssign.length,
+            totalValue: totalValue,
             status: 'Na trase',
-            assignedOrders: ordersToAssign // Keep track of assigned orders
+            assignedOrders: orderIds
         };
         routes.value.push(newRoute);
 
-        for (let id of ordersToAssign) {
-            const order = dbOrders.value.find(o => o.id === id);
-            if (order) {
-                await updateOrder({ ...order, status: 'delivering' });
-            }
+        for (let order of ordersToAssign) {
+            await updateOrder({ ...order, status: 'delivering' });
         }
+
+        selectedOrderIds.value = [];
         await loadOrders(); // Refresh global orders
-        if (modal) modal.success("Trasa vytvořena", `Trasa pro ${courier.name} byla úspěšně vygenerována.`);
+        if (modal) modal.success("Trasa vytvořena", `Trasa pro ${courier.name} byla úspěšně vygenerována. Celková hodnota: ${totalValue} Kč.`);
     };
 
-    return { couriers, routes, unassignedOrders, createRoute };
+    return { couriers, routes, unassignedOrders, createRoute, selectedOrderIds, toggleOrderSelection };
 }

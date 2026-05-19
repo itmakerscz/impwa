@@ -1,6 +1,6 @@
 // sw.js
-// Bumping version to v2026.3 for production Vue and Frequent section highlighting
-const CACHE_NAME = 'gastrohub-core-v2026.3';
+// Bumping version to v2026.4 for kitchen-worker caching and Kanban drag-drop sorting
+const CACHE_NAME = 'gastrohub-core-v2026.4';
 
 // Array list pinning resource targets required for completely offline bootstrap runtimes
 const IMMUTABLE_ASSETS = [
@@ -9,6 +9,7 @@ const IMMUTABLE_ASSETS = [
   './style.css',
   './app.js',
   './extractor.js',
+  './kitchen-worker.js',
   './parser-worker.js',
   './composables/useOrderManager.js',
   './composables/useSpeech.js',
