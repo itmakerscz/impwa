@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#e67e22">
+    <title>GastroHub Central Suite</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>🍕</text></svg>">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+</head>
+<body>
+
+    <div id="app" v-cloak>
+        <!-- PWA Update Banner -->
+        <div v-if="updateAvailable" class="update-banner animate-fade-in">
+            <span>✨ Nová verze GastroHub je k dispozici!</span>
+            <button @click="refreshApp" class="update-btn">Aktualizovat nyní</button>
+        </div>
+
+        <header style="background: #2c3e50; color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <h1 style="margin: 0; font-size: 1.4rem;">🍕 GastroHub Central</h1>
+            
+            <nav style="display: flex; gap: 5px; flex-wrap: wrap;">
+                <nav-button id="rec" :active-tab="currentTab" label="🎙️ Příjem" @navigate="currentTab = $event"></nav-button>
+                <nav-button id="kitchen" :active-tab="currentTab" label="🧑‍🍳 Pec" :count="pendingPizzaOrders.length + bakingPizzaOrders.length" @navigate="currentTab = $event"></nav-button>
+                <nav-button id="grill" :active-tab="currentTab" label="🔥 Gril" :count="pendingGrillOrders.length + grillingOrders.length" @navigate="currentTab = $event"></nav-button>
+                <nav-button id="scanner" :active-tab="currentTab" label="📷 Scanner" @navigate="currentTab = $event"></nav-button>
+                <nav-button id="routes" :active-tab="currentTab" label="🗺️ Trasy" @navigate="currentTab = $event"></nav-button>
+            </nav>
+        </header>
+
+        <main style="padding: 15px; max-width: 1200px; margin: 0 auto;">
+
+            <component 
+                :is="'tab-' + currentTab"
+                v-bind="{ 
+                    isListening, transcript, interimTranscript, currentOrder, 
+                    pendingPizzaOrders, bakingPizzaOrders, completedPizzaOrders,
+                    pendingGrillOrders, grillingOrders, completedGrillOrders,
+                    isScannerActive, scannerError,
+                    volume,
+                    unassignedOrders, couriers, routes,
+                    formatTime,
+                    menuItems
+                }"
+                @toggle-listening="toggleListening"
+                @confirm-order="handleConfirmOrder"
+                @add-item="addItemToOrder"
+                @reset-order="resetOrder(); resetTranscript()"
+                @start-pizza-baking="startPizzaBaking"
+                @finish-pizza-baking="finishPizzaBaking"
+                @start-grilling="startGrilling"
+                @finish-grilling="finishGrilling"
+                @start-scanner="startScanner"
+                @stop-scanner="stopScanner"
+                @create-route="createRoute"
+            ></component>
+
+            <!-- Operator Sandbox / Debug Logs -->
+            <section v-if="debugLogs.length > 0" class="card" style="margin-top: 30px; border-top: 3px solid #7f8c8d; background: #2d3436; color: #dfe6e9;">
+                <h4 style="margin-top: 0; color: #fab1a0;">🛠️ Operátorský Sandbox (Logy)</h4>
+                <div style="max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.85rem;">
+                    <div v-for="(log, index) in debugLogs" :key="index" style="margin-bottom: 5px; padding: 4px; border-bottom: 1px solid #636e72; display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <span style="color: #636e72;">[{{ log.time }}]</span> 
+                            <span :style="{ color: log.type === 'error' ? '#ff7675' : (log.type === 'success' ? '#55efc4' : '#dfe6e9') }">
+                                {{ log.msg }}
+                            </span>
+                        </div>
+                        <button v-if="log.action" @click="log.action.callback(); debugLogs.splice(index, 1)" style="background: #fdcb6e; border: none; padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 0.75rem; font-weight: bold; color: #2d3436;">
+                            🔄 {{ log.action.label }}
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Custom Modal -->
+            <div v-if="modal.isVisible" class="modal-overlay">
+                <div :class="['modal-content animate-fade-in', modal.type]">
+                    <div class="modal-header">
+                        <span class="modal-icon">{{ modal.icon }}</span>
+                        <h4>{{ modal.title }}</h4>
+                    </div>
+                    <p>{{ modal.message }}</p>
+                    <div class="modal-actions">
+                        <button v-if="modal.isConfirm" @click="modal.handleAction(false)" class="nav-btn" style="color: #333; border-color: #ccc;">{{ modal.cancelText }}</button>
+                        <button @click="modal.handleAction(true)" :class="['action-btn-success', { 'btn-danger': modal.type === 'warning' }]" style="width: auto; padding: 8px 25px;">
+                            {{ modal.confirmText }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+</body>
+</html>

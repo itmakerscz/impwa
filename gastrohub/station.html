@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🍕 Pizza Stanice - Kuchyňský Displej</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <style>
+        :root {
+            --bg: #121212;
+            --card-bg: #1e1e1e;
+            --primary: #ff4500;
+            --text: #f5f5f5;
+            --text-muted: #aaa;
+            --success: #2e7d32;
+            --warning: #ef6c00;
+            --border: #333;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--primary);
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+
+        h1 { margin: 0; font-size: 1.8rem; display: flex; align-items: center; gap: 10px; }
+
+        .refresh-btn {
+            background: #2a2a2a;
+            border: 1px solid var(--border);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* Třísloupcový Kanban Layout pro kuchyň */
+        .station-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            height: calc(100vh - 120px);
+            align-items: start;
+        }
+
+        .column {
+            background: var(--card-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            max-height: 100%;
+            overflow-y: auto;
+        }
+
+        .column-header {
+            font-size: 1.1rem;
+            font-weight: bold;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #333;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .badge {
+            background: #333;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+        }
+
+        /* Karty objednávek */
+        .kitchen-card {
+            background: #262626;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 12px;
+            position: relative;
+        }
+
+        .pizza-title {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #fff;
+            margin-bottom: 5px;
+        }
+
+        .order-meta {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        /* Progress Bar pro pečení */
+        .progress-bar-container {
+            background: #1a1a1a;
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .progress-bar {
+            background: linear-gradient(90deg, var(--warning), var(--primary));
+            height: 100%;
+            transition: width 1s linear;
+        }
+
+        .timer-display {
+            font-size: 1.3rem;
+            font-weight: bold;
+            font-family: monospace;
+            color: var(--warning);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .timer-display.ready {
+            color: #4caf50;
+            animation: pulse 1s infinite alternate;
+        }
+
+        /* Akční tlačítka */
+        .action-btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            color: white;
+        }
+
+        .btn-bake { background-color: var(--warning); }
+        .btn-bake:hover { background-color: #d86200; }
+        .btn-complete { background-color: var(--success); }
+        .btn-complete:hover { background-color: #236327; }
+        .btn-archive { background-color: #c62828; margin-top: 10px;}
+
+        @keyframes pulse {
+            from { opacity: 0.6; }
+            to { opacity: 1; }
+        }
+
+        @media (max-width: 900px) {
+            .station-grid { grid-template-columns: 1fr; overflow-y: auto; height: auto; }
+            .column { max-height: none; margin-bottom: 20px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="station-app">
+        <header>
+            <h1>🍕 Pizza Stanice — Příprava & Pec</h1>
+            <button class="refresh-btn" @click="loadOrders">
+                <span class="material-icons">refresh</span> Aktualizovat
+            </button>
+        </header>
+
+        <div v-if="error" style="color: red; margin-bottom: 20px;">{{ error }}</div>
+
+        <div class="station-grid">
+            <div class="column">
+                <div class="column-header">
+                    <span>K přípravě</span>
+                    <span class="badge">{{ pendingOrders.length }}</span>
+                </div>
+                
+                <div v-for="order in pendingOrders" :key="order.id" class="kitchen-card">
+                    <div class="pizza-title">{{ order.item || 'Neznámá pizza' }}</div>
+                    <div class="order-meta">
+                        Čas objednání: {{ new Date(order.created_at).toLocaleTimeString('cs-CZ', {hour: '2-digit', minute:'2-digit'}) }}
+                        <div v-if="order.address">📍 {{ order.address }}</div>
+                    </div>
+                    <button class="action-btn btn-bake" @click="startBaking(order)">
+                        <span class="material-icons">local_fire_department</span> Vložit do pece
+                    </button>
+                </div>
+            </div>
+
+            <div class="column">
+                <div class="column-header">
+                    <span>V peci (Peče se)</span>
+                    <span class="badge">{{ bakingOrders.length }}</span>
+                </div>
+
+                <div v-for="order in bakingOrders" :key="order.id" class="kitchen-card" style="border-left: 4px solid var(--warning);">
+                    <div class="pizza-title">{{ order.item }}</div>
+                    
+                    <div :class="['timer-display', { ready: order.bakingRemaining <= 0 }]">
+                        <span class="material-icons">schedule</span>
+                        {{ formatTime(order.bakingRemaining) }}
+                    </div>
+
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" :style="{ width: getProgress(order) + '%' }"></div>
+                    </div>
+
+                    <button class="action-btn btn-complete" @click="completeOrder(order)">
+                        <span class="material-icons">check_circle</span> Vyndat a dokončit
+                    </button>
+                </div>
+            </div>
+
+            <div class="column">
+                <div class="column-header">
+                    <span>Hotovo / Výdej</span>
+                    <span class="badge">{{ completedOrders.length }}</span>
+                </div>
+
+                <div v-for="order in completedOrders" :key="order.id" class="kitchen-card" style="opacity: 0.85; border-left: 4px solid var(--success);">
+                    <div class="pizza-title" style="text-decoration: line-through; color: var(--text-muted);">
+                        {{ order.item }}
+                    </div>
+                    <div class="order-meta">
+                        Hotovo: {{ new Date().toLocaleTimeString('cs-CZ', {hour: '2-digit', minute:'2-digit'}) }}
+                    </div>
+                    <button class="action-btn btn-archive" @click="archiveOrder(order.id)">
+                        <span class="material-icons">archive</span> Odstranit z desky
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="./station.js"></script>
+</body>
+</html>
