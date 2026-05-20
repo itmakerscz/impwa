@@ -1,114 +1,179 @@
-// composables/useKitchenStation.js
+const { ref, computed, watch, onBeforeUnmount } = Vue;
 import { updateOrder } from '../storage.js';
-import { useSpeech } from './useSpeech.js';
 
-const { computed, ref, onMounted, onBeforeUnmount } = Vue;
+export function useKitchenStation({ log, dbOrders, loadOrders, modal }) {
+    const timerInterval = ref(null);
+    const worker = ref(null);
+    
+    // Load capacities from localStorage or default to 8
+    const pizzaCapacity = ref(parseInt(localStorage.getItem('gastrohub_pizza_capacity')) || 8);
+    const grillCapacity = ref(parseInt(localStorage.getItem('gastrohub_grill_capacity')) || 8);
+    const isTurboMode = ref(localStorage.getItem('gastrohub_turbo_mode') === 'true');
 
-export function useKitchenStation({ dbOrders, loadOrders }) {
-    const { speak } = useSpeech();
-    let tickerInterval = null;
-    let kitchenWorker = null;
-    const STATION_CAPACITY = 8;
-
-    // Computed properties for filtering orders by status and type
-    const pendingPizzaOrders = computed(() => dbOrders.value.filter(o => (!o.status || o.status === 'pending') && o.category === 'pizza'));
-    const bakingPizzaOrders = computed(() => dbOrders.value.filter(o => o.status === 'baking'));
-    const completedPizzaOrders = computed(() => dbOrders.value.filter(o => o.status === 'completed_pizza'));
-
-    const pendingGrillOrders = computed(() => dbOrders.value.filter(o => (!o.status || o.status === 'pending') && o.category === 'grill'));
-    const grillingOrders = computed(() => dbOrders.value.filter(o => o.status === 'grilling'));
-    const completedGrillOrders = computed(() => dbOrders.value.filter(o => o.status === 'completed_grill'));
-
-    // Action: Start Pizza Baking
-    const startPizzaBaking = async (order) => {
-        const updatedOrder = {
-            ...order,
-            status: 'baking',
-            pizzaTotal: order.prepTime || 300,
-            pizzaStartedAt: Date.now()
-        };
-        await updateOrder(updatedOrder);
-        await loadOrders(); // Refresh global orders
-    };
-
-    // Action: Finish Pizza Baking
-    const finishPizzaBaking = async (order) => {
-        const updatedOrder = {
-            ...order,
-            status: 'completed_pizza'
-        };
-        await updateOrder(updatedOrder);
-        await loadOrders(); // Refresh global orders
-    };
-
-    // Action: Start Grilling
-    const startGrilling = async (order) => {
-        const updatedOrder = {
-            ...order,
-            status: 'grilling',
-            grillTotal: order.prepTime || 420,
-            grillStartedAt: Date.now()
-        };
-        await updateOrder(updatedOrder);
-        await loadOrders(); // Refresh global orders
-    };
-
-    // Action: Finish Grilling
-    const finishGrilling = async (order) => {
-        const updatedOrder = {
-            ...order,
-            status: 'completed_grill'
-        };
-        await updateOrder(updatedOrder);
-        await loadOrders(); // Refresh global orders
-    };
-
-    const startKitchenTicker = () => {
-        // Inicializace Web Workeru
-        kitchenWorker = new Worker(new URL('../kitchen-worker.js', import.meta.url));
-
-        kitchenWorker.onmessage = (e) => {
-            const { updatedOrders, alerts } = e.data;
+    const initWorker = () => {
+        if (worker.value) return;
+        worker.value = new Worker(new URL('../kitchen-worker.js', import.meta.url));
+        
+        worker.value.onmessage = async (e) => {
+            const { updatedOrders, alerts, shouldSaveToDB } = e.data;
             
-            // Synchronizace vypočtených dat zpět do reaktivního pole
-            updatedOrders.forEach(newO => {
-                const oldO = dbOrders.value.find(o => o.id === newO.id);
-                if (oldO) {
-                    oldO.estimatedWait = newO.estimatedWait;
-                    oldO.pizzaRemaining = newO.pizzaRemaining;
-                    oldO.pizzaProgress = newO.pizzaProgress;
-                    oldO.pizzaAlerted = newO.pizzaAlerted;
-                    oldO.grillRemaining = newO.grillRemaining;
-                    oldO.grillProgress = newO.grillProgress;
-                    oldO.grillAlerted = newO.grillAlerted;
-                }
-            });
+            // Update local state for immediate UI feedback
+            dbOrders.value = updatedOrders;
 
-            // Zpracování hlasových upozornění vygenerovaných workerem
+            // Log alerts for finished items
             alerts.forEach(alert => {
-                const prefix = alert.type === 'pizza' ? 'Pizza' : 'Gril';
-                speak(`${prefix}: Objednávka ${alert.item || ''} je hotová!`);
+                log(`Položka ${alert.name} z objednávky #${alert.orderId} je hotová!`, 'success');
             });
-        };
 
-        tickerInterval = setInterval(() => {
-            if (!dbOrders.value.length) return;
-            kitchenWorker.postMessage({
+            // Persist to IndexedDB only if statuses actually changed (optimization)
+            if (shouldSaveToDB) {
+                for (const order of updatedOrders.filter(o => o._changed)) {
+                    delete order._changed; // Clean up temp property
+                    await updateOrder(order); 
+                }
+                await loadOrders();
+            }
+        };
+    };
+
+    // Computed properties to filter orders for each Kanban column
+    const filterByItemStatus = (cat, status) => 
+        dbOrders.value.filter(order => order.items.some(i => i.category === cat && i.status === status));
+
+    const pendingPizzaOrders = computed(() =>
+        filterByItemStatus('pizza', 'pending'));
+
+    const bakingPizzaOrders = computed(() =>
+        filterByItemStatus('pizza', 'baking'));
+
+    const completedPizzaOrders = computed(() =>
+        dbOrders.value.filter(order =>
+            order.items.every(item => item.category === 'pizza' ? item.status === 'done' : true) && // All pizza items done
+            order.items.some(item => item.category === 'pizza') // And there is at least one pizza item
+        )
+    );
+
+    const pendingGrillOrders = computed(() => filterByItemStatus('grill', 'pending'));
+    const grillingOrders = computed(() => filterByItemStatus('grill', 'grilling'));
+
+    const completedGrillOrders = computed(() =>
+        dbOrders.value.filter(order =>
+            order.items.every(item => item.category === 'grill' ? item.status === 'done' : true) && // All grill items done
+            order.items.some(item => item.category === 'grill') // And there is at least one grill item
+        )
+    );
+
+    // Global capacity tracking
+    const pizzaActiveCount = computed(() => {
+        return bakingPizzaOrders.value.reduce((acc, order) => acc + order.items.filter(i => i.status === 'baking' && i.category === 'pizza').length, 0);
+    });
+
+    const grillActiveCount = computed(() => {
+        return grillingOrders.value.reduce((acc, order) => acc + order.items.filter(i => i.status === 'grilling' && i.category === 'grill').length, 0);
+    });
+
+    const pizzaCapacityReached = computed(() => !isTurboMode.value && pizzaActiveCount.value >= pizzaCapacity.value);
+    const grillCapacityReached = computed(() => !isTurboMode.value && grillActiveCount.value >= grillCapacity.value);
+
+    // --- Timer Management ---
+    const startGlobalTimer = () => {
+        if (timerInterval.value) return;
+        initWorker();
+        
+        timerInterval.value = setInterval(() => {
+            worker.value.postMessage({
                 orders: JSON.parse(JSON.stringify(dbOrders.value)),
-                now: Date.now(),
-                capacity: STATION_CAPACITY
+                now: Date.now()
             });
         }, 1000);
     };
 
-    onMounted(startKitchenTicker);
+    const stopGlobalTimer = () => {
+        if (timerInterval.value) {
+            clearInterval(timerInterval.value);
+            timerInterval.value = null;
+        }
+    };
+
+    // --- Actions for Kanban Columns ---
+    const updateItemStatus = async (order, item, newStatus) => {
+        if (!order || !item) return;
+        
+        const targetOrder = dbOrders.value.find(o => o.id === order.id);
+        if (!targetOrder) return;
+        
+        const targetItem = targetOrder.items.find(i => i.id === item.id);
+        if (targetItem) {
+            targetItem.status = newStatus;
+            
+            if (newStatus === 'baking' || newStatus === 'grilling') {
+                targetItem.startTime = Date.now();
+                targetItem.remainingTime = targetItem.prepTime;
+                targetItem.progress = 0;
+            } else if (newStatus === 'done') {
+                targetItem.remainingTime = 0;
+                targetItem.progress = 100;
+            }
+
+            await updateOrder(targetOrder); // storage.js handles cloning
+            await loadOrders();
+            
+            if (newStatus === 'baking' || newStatus === 'grilling') {
+                startGlobalTimer();
+            }
+        }
+    };
+
+    const startPizzaBaking = (order, item) => updateItemStatus(order, item, 'baking');
+    const finishPizzaBaking = (order, item) => updateItemStatus(order, item, 'done');
+    const startGrilling = (order, item) => updateItemStatus(order, item, 'grilling');
+    const finishGrilling = (order, item) => updateItemStatus(order, item, 'done');
+
+    // Watch orders to start/stop timer automatically whenever active items appear
+    watch(() => dbOrders.value, (newOrders) => {
+        const hasActiveItems = (newOrders || []).some(order => 
+            (order.items || []).some(item => item.status === 'baking' || item.status === 'grilling')
+        );
+        
+        if (hasActiveItems) {
+            startGlobalTimer();
+        } else if (!hasActiveItems && timerInterval.value) {
+            stopGlobalTimer();
+        }
+    }, { deep: true, immediate: true });
+
     onBeforeUnmount(() => {
-        if (tickerInterval) clearInterval(tickerInterval);
-        if (kitchenWorker) kitchenWorker.terminate();
+        stopGlobalTimer();
+        if (worker.value) {
+            worker.value.terminate();
+            worker.value = null;
+        }
     });
 
+    const toggleTurboMode = () => {
+        isTurboMode.value = !isTurboMode.value;
+        localStorage.setItem('gastrohub_turbo_mode', isTurboMode.value);
+        modal.success("Režim Turbo", `Režim Turbo je nyní ${isTurboMode.value ? 'ZAPNUTÝ' : 'VYPNUTÝ'}.`);
+    };
+
     return {
-        pendingPizzaOrders, bakingPizzaOrders, completedPizzaOrders, startPizzaBaking, finishPizzaBaking,
-        pendingGrillOrders, grillingOrders, completedGrillOrders, startGrilling, finishGrilling
+        pendingPizzaOrders,
+        bakingPizzaOrders,
+        completedPizzaOrders,
+        pendingGrillOrders,
+        grillingOrders,
+        completedGrillOrders,
+        pizzaActiveCount,
+        grillActiveCount,
+        pizzaCapacity,
+        grillCapacity,
+        pizzaCapacityReached,
+        grillCapacityReached,
+        isTurboMode, // Expose turbo mode state
+        startPizzaBaking,
+        finishPizzaBaking,
+        startGrilling,
+        finishGrilling,
+        toggleTurboMode // Expose toggle function
     };
 }

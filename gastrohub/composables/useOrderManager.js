@@ -1,21 +1,25 @@
 // composables/useOrderManager.js
 import { parseVoiceTextAsync } from '../parser.js';
 import { saveOrder, getAllOrders, saveNickname, getDictionary, deleteNickname } from '../storage.js';
+import { formatQty } from '../utils.js';
 
 const { ref, onMounted } = Vue;
 
 export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
     const orders = ref([]);
     const userDictionary = ref([]);
+    const isProcessing = ref(false);
     
     // Aktuálně rozpracovaná objednávka zachycená z hlasu
     const currentOrder = ref({
-        item: '',
+        item: '', // Summary string, e.g., "1x Pizza, 2x Kure"
+        items: [], // Detailed array of item objects
         address: '',
         phone: '',
         status: 'pending',
         category: 'pizza',
-        prepTime: 300
+        prepTime: 0,
+        price: 0
     });
 
     const loadDictionary = async () => {
@@ -23,40 +27,45 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
             const dict = await getDictionary();
             userDictionary.value = dict || [];
         } catch (err) {
-            log('Chyba při načítání slovníku: ' + err.message, 'error');
+            log('Chyba při načítání slovníku: ' + err.message, 'error', loadDictionary);
         }
     };
 
     const loadOrders = async () => {
         try {
             const data = await getAllOrders();
-            orders.value = data || [];
+            if (Array.isArray(data)) {
+                orders.value = data;
+            }
         } catch (err) {
-            log('Chyba při načítání objednávek: ' + err.message, 'error');
+            log('Chyba při načítání objednávek: ' + err.message, 'error', loadOrders);
         }
     };
 
-    // Pomocná funkce pro sjednocení položek (např. "1x Pizza, 1x Pizza" -> "2x Pizza")
-    const consolidateItems = (itemString) => {
-        const itemMap = {};
-        // Rozdělíme řetězec podle čárek a zpracujeme každou část
-        itemString.split(/[,+]/).forEach(part => {
-            const trimmed = part.trim();
-            if (!trimmed) return;
+    // Helper function to calculate total price, prep time, and summary string from items array
+    const calculateOrderSummary = (itemsArray) => {
+        let total = 0;
+        let maxPrep = 0;
+        const consolidated = {};
+        let primaryCategory = 'pizza'; // Default to pizza
 
-            // Hledáme formát "2x Název" nebo jen "Název" (předpokládáme 1x)
-            const match = trimmed.match(/^(\d+)x\s+(.+)$/);
-            if (match) {
-                const qty = parseInt(match[1]);
-                const name = match[2];
-                itemMap[name] = (itemMap[name] || 0) + qty;
-            } else if (trimmed && trimmed !== "Nerozpoznaná položka") {
-                itemMap[trimmed] = (itemMap[trimmed] || 0) + 1;
-            }
+        itemsArray.forEach(item => {
+            total += ((item.price || 0) + (item.extrasPrice || 0)) * (item.quantity || 1);
+            maxPrep = Math.max(maxPrep, item.prepTime || 0);
+            consolidated[item.name] = (consolidated[item.name] || 0) + (item.quantity || 1);
+            if (item.category === 'grill') primaryCategory = 'grill'; // If any grill item, order is grill
         });
-        return Object.entries(itemMap)
-            .map(([name, qty]) => `${qty}x ${name}`)
+
+        const itemSummary = Object.entries(consolidated)
+            .map(([name, qty]) => `${formatQty(qty)}x ${name}`)
             .join(", ");
+
+        return {
+            item: itemSummary,
+            price: total,
+            prepTime: maxPrep,
+            category: primaryCategory
+        };
     };
 
     // Hlavní metoda, kterou volá useSpeechRecognition při ukončení řeči
@@ -64,54 +73,74 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
         const normalized = text.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
 
         // Voice Macro: Nová objednávka
-        if (normalized.includes("novaobjednavka")) {
+        if (normalized.includes("novaobjednavka") || normalized.includes("nováobjednávka")) {
             log("Příkaz: Nová objednávka zachycen.", "info");
             resetOrder();
             return "RESET_TRIGGERED"; // Signal to recognition to clear its buffer
         }
 
         // Voice Macro: Uložit objednávku
-        if (normalized.includes("ulozitobjednavku")) {
+        if (normalized.includes("ulozitobjednavku") || normalized.includes("uložitobjednávku")) {
             log("Příkaz: Uložit objednávku zachycen.", "info");
-            const cleanText = text.replace(/uložit\s+objednávku/gi, "").trim();
-            await handleFinalResult(cleanText); // Parse the actual text first
+            // Odmažeme z textu samotný spouštěcí příkaz a vyčistíme bílé znaky
+            const cleanText = text
+                .replace(/uložit\s+objednávku/gi, "")
+                .replace(/ulozit\s+objednavku/gi, "")
+                .replace(/\s+/g, " ")
+                .trim();
+            if (cleanText) await handleFinalResult(cleanText); // Parse the actual text first
             await handleConfirmOrder();
             return "SAVE_TRIGGERED";
         }
 
         log(`Zpracovávám hlas (Worker + Menu): "${text}"`, 'log');
 
+        isProcessing.value = true;
         try {
             const parsed = await parseVoiceTextAsync(text, userDictionary.value, customMenuRef.value);
             if (parsed) {
-                // Pokud už v objednávce něco je, spojíme to a zkonsolidujeme
-                const combinedItems = currentOrder.value.item 
-                    ? `${currentOrder.value.item}, ${parsed.item}`
-                    : parsed.item;
+                // Handle extra ingredients detection logic if present in parsed data
+                // This refactor assumes the items already contain an 'extras' field from the parser
+                const itemsWithExtras = parsed.items.map(it => ({
+                    ...it,
+                    extras: it.extras || "",
+                    isRush: it.isRush || false // Ensure isRush is passed through
+                }));
+
+                // Combine existing items with newly parsed items
+                const combinedItemsArray = [...currentOrder.value.items, ...itemsWithExtras];
+                const summary = calculateOrderSummary(combinedItemsArray);
 
                 currentOrder.value = {
                     ...currentOrder.value,
-                    item: consolidateItems(combinedItems),
+                    items: combinedItemsArray, // Update detailed items array
+                    item: summary.item, // Update summary string
                     address: parsed.address || currentOrder.value.address,
                     phone: parsed.phone || currentOrder.value.phone,
-                    category: parsed.category || currentOrder.value.category,
-                    prepTime: parsed.prepTime || currentOrder.value.prepTime
+                    category: summary.category, // Update category based on combined items
+                    prepTime: summary.prepTime, // Update prepTime based on combined items
+                    price: summary.price // Update total price based on combined items
                 };
                 log(`Parser úspěšně naplnil data objednávky.`, 'log');
             }
         } catch (err) {
-            log(`Chyba parseru: ${err.message}`, 'error');
+            log(`Chyba parseru: ${err.message}`, 'error', () => handleFinalResult(text));
+        } finally {
+            isProcessing.value = false;
         }
     };
 
     const addItemToOrder = (item) => {
-        currentOrder.value.item = currentOrder.value.item || "";
-        const combined = currentOrder.value.item 
-            ? `${currentOrder.value.item}, 1x ${item.name}` 
-            : `1x ${item.name}`;
-        
-        currentOrder.value.item = consolidateItems(combined);
-        currentOrder.value.category = item.category || 'pizza';
+        // Add the new item (with quantity 1) to the detailed items array
+        const newItem = { ...item, quantity: 1, extrasPrice: 0, isRush: false }; // Initialize isRush
+        const combinedItemsArray = [...currentOrder.value.items, newItem];
+        const summary = calculateOrderSummary(combinedItemsArray);
+
+        currentOrder.value.items = combinedItemsArray;
+        currentOrder.value.item = summary.item;
+        currentOrder.value.category = summary.category;
+        currentOrder.value.prepTime = summary.prepTime;
+        currentOrder.value.price = summary.price;
     };
 
     const handleInterimTranscript = (text) => {
@@ -119,7 +148,7 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
     };
 
     const handleConfirmOrder = async () => {
-        if (!currentOrder.value.item) {
+        if (currentOrder.value.items.length === 0) { // Check detailed items array
             if (modal) modal.alert('Prázdná objednávka', 'Objednávka neobsahuje žádné položky k uložení.');
             return;
         }
@@ -127,11 +156,11 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
         // Prevence duplicitních objednávek
         // Re-fetch or use the reactive reference to ensure we check against the latest DB state
         const currentDbOrders = await getAllOrders();
-        const isDuplicate = currentDbOrders.some(o => 
-            o.item === currentOrder.value.item && 
-            o.address === currentOrder.value.address && 
-            o.status === 'pending'
-        );
+        const isDuplicate = currentDbOrders.some(o => {
+            const sameItem = (o.item || "").trim() === (currentOrder.value.item || "").trim();
+            const sameAddress = (o.address || "").trim() === (currentOrder.value.address || "").trim();
+            return sameItem && sameAddress && o.status === 'pending';
+        });
 
         if (isDuplicate) {
             if (modal) modal.alert('Duplicitní objednávka', 'Tato objednávka již v systému čeká na zpracování.');
@@ -140,7 +169,8 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
 
         try {
             const orderId = await saveOrder({
-                item: currentOrder.value.item,
+                item: currentOrder.value.item, // Summary string
+                items: currentOrder.value.items, // Detailed items array
                 address: currentOrder.value.address,
                 phone: currentOrder.value.phone,
                 status: 'pending',
@@ -150,11 +180,9 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
 
             // Update item frequency stats for the "Frequent" menu section
             const usage = JSON.parse(localStorage.getItem('gastrohub_item_stats') || '{}');
-            currentOrder.value.item.split(',').forEach(part => {
-                // Remove quantity prefix (e.g., "1x ") and trim whitespace
-                const name = part.trim().replace(/^\d+x\s+/, '');
-                if (name && name !== "Nerozpoznaná položka") {
-                    usage[name] = (usage[name] || 0) + 1;
+            currentOrder.value.items.forEach(item => {
+                if (item.name && item.name !== "Nerozpoznaná položka") {
+                    usage[item.name] = (usage[item.name] || 0) + 1;
                 }
             });
             localStorage.setItem('gastrohub_item_stats', JSON.stringify(usage));
@@ -162,20 +190,24 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
             log(`Objednávka #${orderId} byla úspěšně uložena do IndexedDB.`, 'log');
             resetOrder();
             await loadOrders(); // Osvěžení stavu pro kuchyň a pec
+            if (modal) modal.success('Objednávka uložena', `Objednávka #${orderId} byla úspěšně uložena.`);
         } catch (err) {
-            log('Chyba při ukládání objednávky: ' + err.message, 'error');
+            log('Chyba při ukládání objednávky: ' + err.message, 'error', handleConfirmOrder);
             if (modal) modal.alert('Chyba uložení', 'Nepodařilo se uložit objednávku do databáze.');
         }
     };
 
+
     const resetOrder = () => {
         currentOrder.value = {
             item: '',
+            items: [],
             address: '',
             phone: '',
             status: 'pending',
-            category: 'pizza',
-            prepTime: 300
+            category: 'pizza', // Default category
+            prepTime: 0,
+            price: 0
         };
     };
 
@@ -200,6 +232,7 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
         orders,
         currentOrder,
         userDictionary,
+        isProcessing,
         handleFinalResult,
         handleInterimTranscript,
         handleConfirmOrder,

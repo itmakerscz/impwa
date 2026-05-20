@@ -28,6 +28,7 @@
                 <nav-button id="grill" :active-tab="currentTab" label="🔥 Gril" :count="pendingGrillOrders.length + grillingOrders.length" @navigate="currentTab = $event"></nav-button>
                 <nav-button id="scanner" :active-tab="currentTab" label="📷 Scanner" @navigate="currentTab = $event"></nav-button>
                 <nav-button id="routes" :active-tab="currentTab" label="🗺️ Trasy" @navigate="currentTab = $event"></nav-button>
+                <nav-button id="menu" :active-tab="currentTab" label="⚙️ Menu" @navigate="currentTab = $event"></nav-button>
             </nav>
         </header>
 
@@ -40,6 +41,11 @@
                     pendingPizzaOrders, bakingPizzaOrders, completedPizzaOrders,
                     pendingGrillOrders, grillingOrders, completedGrillOrders,
                     isScannerActive, scannerError,
+                    pizzaCapacity,
+                    grillCapacity,
+                    pizzaActiveCount,
+                    grillActiveCount,
+                    isTurboMode,
                     volume,
                     unassignedOrders, couriers, routes,
                     formatTime,
@@ -56,8 +62,11 @@
                 @finish-grilling="finishGrilling"
                 @start-scanner="startScanner"
                 @stop-scanner="stopScanner"
+                @complete-route="completeRoute"
                 @create-route="createRoute"
                 @toggle-order-selection="toggleOrderSelection"
+                @update-settings="updateSettings"
+                @toggle-turbo-mode="toggleTurboMode"
                 @reorder="handleReorder"
             ></component>
 
@@ -89,7 +98,7 @@
                     <p>{{ modal.message }}</p>
                     <div class="modal-actions">
                         <button v-if="modal.isConfirm" @click="modal.handleAction(false)" class="nav-btn" style="color: #333; border-color: #ccc;">{{ modal.cancelText }}</button>
-                        <button @click="modal.handleAction(true)" :class="['action-btn-success', { 'btn-danger': modal.type === 'warning' }]" style="width: auto; padding: 8px 25px;">
+                    <button @click="modal.handleAction(true)" :class="['modal-btn', modal.type]">
                             {{ modal.confirmText }}
                         </button>
                     </div>

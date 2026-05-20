@@ -1,4 +1,5 @@
 // parser.js
+import { formatQty } from './utils.js';
 export const PIZZA_MENU = [
     { id: 1, name: "Margherita", category: "pizza", prepTime: 300, price: 159 },
     { id: 2, name: "Šunková", category: "pizza", prepTime: 300, price: 179 },
@@ -32,12 +33,22 @@ export const PIZZA_MENU = [
 
 const CZECH_NUMBER_MAP = {
     "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "10": 10,
-    "jedna": 1, "jednu": 1, "jeden": 1, "jedny": 1,
-    "dva": 2, "dvě": 2, "dvakrát": 2,
-    "tři": 3, "třikrát": 3,
-    "čtyři": 4, "čtyřikrát": 4,
-    "pět": 5, "pětkrát": 5,
-    "šest": 6, "sedm": 7, "osm": 8, "devět": 9, "deset": 10
+    "jedna": 1, "jednu": 1, "jeden": 1, "jedny": 1, "jedno": 1,
+    "dva": 2, "dve": 2, "dvakrat": 2,
+    "tri": 3, "trikrat": 3,
+    "ctyri": 4, "ctyrikrat": 4,
+    "pet": 5, "petkrat": 5, "pět": 5, "pětkrát": 5,
+    "sest": 6, "sestkrat": 6, "šest": 6, "šestkrát": 6,
+    "sedm": 7, "sedmkrat": 7,
+    "osm": 8, "osmkrat": 8,
+    "devet": 9, "devetkrat": 9, "devět": 9, "devětkrát": 9,
+    "deset": 10, "desetkrat": 10,
+    // Additional forms
+    "jednou": 1, "dvakrát": 2, "třikrát": 3, "čtyřikrát": 4, "pětkrát": 5,
+    "šestkrát": 6, "sedmkrát": 7, "osmkrát": 8, "devětkrát": 9, 
+    // Fractional support
+    "pul": 0.5, "pulka": 0.5, "pulku": 0.5,
+    "ctvrt": 0.25, "ctvrtka": 0.25, "ctvrtku": 0.25
 };
 
 const ADDRESS_KEYWORDS = ["ulice", "na adrese", "ulici", "město", "číslo", "adresa", "na adresu"];
@@ -46,6 +57,41 @@ const PIZZA_SYNONYMS = ["pizza", "piza", "pica", "pizzu", "pizu", "picu"];
 const GRILL_SYNONYMS = ["grill", "gril", "grilovany", "grilovane", "grilovaneho", "grilovanou", "na grilu", "z grilu", "rost"];
 
 const PHONE_KEYWORDS = ["telefon", "mobil", "číslo", "cislo", "tel", "kontakt"];
+
+/**
+ * Normalization map for ingredients in modifiers (extras).
+ * Maps various forms and synonyms to a standardized term.
+ */
+const INGREDIENT_SYNONYMS = {
+    "eidam": "syr",
+    "syra": "syr",
+    "syru": "syr",
+    "mozzarella": "syr",
+    "niva": "syr",
+    "hermelin": "syr",
+    "cibuli": "cibule",
+    "slaninu": "slanina",
+    "sunku": "sunka",
+    "vajicko": "vejce",
+    "rajce": "rajcata"
+};
+
+/**
+ * Price list for ingredients when added as "extra".
+ */
+const INGREDIENT_PRICES = {
+    "syr": 20,
+    "cibule": 10,
+    "slanina": 25,
+    "sunka": 20,
+    "vejce": 15,
+    "rajcata": 15
+};
+
+/**
+ * Klíčová slova pro detekci prioritních objednávek (Rush).
+ */
+const RUSH_KEYWORDS = ["spech", "spesne", "urgentni", "rychle", "rychly", "hned", "priorita"];
 
 /**
  * Parses voice-to-text input into structured order data.
@@ -63,7 +109,7 @@ export const parseVoiceText = (text, userDictionary = [], customMenu = []) => {
 
     let phone = "";
     let address = "";
-    let identifiedItems = [];
+    let identifiedItemsList = [];
     let maxPrepTime = 0;
     let totalPrice = 0;
 
@@ -112,13 +158,13 @@ export const parseVoiceText = (text, userDictionary = [], customMenu = []) => {
     userDictionary.forEach(entry => {
         const nickname = entry.nickname.toLowerCase();
         if (normalizedForItems.includes(nickname)) {
-            identifiedItems.push({ name: entry.pizzaName, quantity: 1, category: "pizza" });
             normalizedForItems = normalizedForItems.replace(nickname, '').trim();
         }
     });
 
     // Then, check fullMenu with quantities
-    const numPattern = `\\b(?:\\d+|${Object.keys(CZECH_NUMBER_MAP).join('|')})\\b`;
+    const sortedNumKeys = Object.keys(CZECH_NUMBER_MAP).sort((a, b) => b.length - a.length);
+    const numPattern = `\\b(?:\\d+|${sortedNumKeys.join('|')})\\b`;
     const consolidatedItems = {};
     for (const item of fullMenu) {
         const names = [item.name, ...(item.aliases || [])].map(n => normalizeInternal(Array.isArray(n) ? n[0] : n));
@@ -129,10 +175,36 @@ export const parseVoiceText = (text, userDictionary = [], customMenu = []) => {
             while ((match = regex.exec(normalizedForItems)) !== null) {
                 const qtyWord = match[1] || match[2];
                 const quantity = qtyWord ? (CZECH_NUMBER_MAP[qtyWord] || parseInt(qtyWord) || 1) : 1;
+
+                // Detect modifiers (extra/bez) in the snippet immediately following the item name
+                const lookAhead = normalizedForItems.substring(match.index + match[0].length, match.index + match[0].length + 60);
+                const modMatches = [...lookAhead.matchAll(/\b(extra|navic|plus|s|bez|minus|ne)\s+([a-z]+)\b/gi)];
                 
+                let extrasPrice = 0;
+                const extras = modMatches.map(m => {
+                    const action = m[1].toLowerCase();
+                    const ingredient = INGREDIENT_SYNONYMS[m[2]] || m[2];
+                    if (["extra", "navic", "plus", "s"].includes(action)) {
+                        extrasPrice += (INGREDIENT_PRICES[ingredient] || 0);
+                    }
+                    return `${m[1]} ${ingredient}`;
+                }).join(", ");
+                
+                // Detect rush keyword
+                const isRush = RUSH_KEYWORDS.some(keyword => lookAhead.includes(keyword));
+
                 consolidatedItems[item.name] = (consolidatedItems[item.name] || 0) + quantity;
-                identifiedItems.push({ name: item.name, category: item.category });
-                totalPrice += (item.price || 0) * quantity;
+                identifiedItemsList.push({ 
+                    name: item.name, 
+                    category: item.category, 
+                    price: item.price, 
+                    extrasPrice: extrasPrice,
+                    prepTime: item.prepTime,
+                    quantity: quantity,
+                    extras: extras,
+                    isRush: isRush // Add the rush flag here
+                });
+                totalPrice += ((item.price || 0) + extrasPrice) * quantity;
                 
                 if (item.prepTime > maxPrepTime) maxPrepTime = item.prepTime;
             }
@@ -140,18 +212,19 @@ export const parseVoiceText = (text, userDictionary = [], customMenu = []) => {
     }
 
     const itemSummary = Object.entries(consolidatedItems)
-        .map(([name, qty]) => `${qty}x ${name}`)
+        .map(([name, qty]) => `${formatQty(qty)}x ${name}`)
         .join(", ");
 
     // Determine primary category based on identified items OR keywords
     const normalizedGrillKeywords = GRILL_SYNONYMS.map(w => normalizeInternal(w));
     const hasGrillKeyword = normalizedGrillKeywords.some(word => originalCleaned.includes(word));
-    const hasGrillItem = identifiedItems.some(i => i.category === 'grill');
+    const hasGrillItem = identifiedItemsList.some(i => i.category === 'grill');
     
     const category = (hasGrillKeyword || hasGrillItem) ? 'grill' : 'pizza';
 
     return {
         item: itemSummary || "Nerozpoznaná položka",
+        items: identifiedItemsList,
         address: address || "Doplnit ručně",
         phone: phone || "Doplnit ručně",
         category: category,

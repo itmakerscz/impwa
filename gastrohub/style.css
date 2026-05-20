@@ -170,6 +170,18 @@ body {
     box-shadow: 0 0 10px rgba(46, 213, 115, 0.5);
 }
 
+/* Rush Item Styling */
+.item-rush {
+    border-color: #e74c3c !important; /* Red border for rush items */
+    box-shadow: 0 0 15px rgba(231, 76, 60, 0.6) !important; /* Stronger glow */
+    animation: pulse-rush 1s infinite alternate; /* Pulsating effect */
+}
+
+@keyframes pulse-rush {
+    0% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(1.01); opacity: 0.9; }
+}
+
 /* Modal UI */
 .modal-overlay {
     position: fixed;

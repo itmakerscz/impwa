@@ -1,5 +1,5 @@
 export function useNotification() {
-    const { ref } = Vue;
+    const { ref, onBeforeUnmount } = Vue;
     const isVisible = ref(false);
     const queue = [];
     let timer = null;
@@ -35,6 +35,8 @@ export function useNotification() {
         isProcessing = false;
         if (timer) clearTimeout(timer);
     };
+
+    onBeforeUnmount(dismiss);
 
     return { isVisible, trigger, dismiss };
 }

@@ -4,57 +4,50 @@
  * Izoluje náročné iterace a výpočty od hlavního UI vlákna.
  */
 self.onmessage = function(e) {
-    const { orders, now, capacity } = e.data;
+    const { orders, now } = e.data;
     if (!orders) return;
 
     const alerts = [];
-    
-    // Pomocná logika pro výpočet volného slotu (přesunuto z useKitchenStation.js)
-    const getWaitTime = (activeOrders) => {
-        if (!activeOrders || activeOrders.length < capacity) return 0;
-        const times = activeOrders.map(o => (o.pizzaRemaining || o.grillRemaining || 0)).sort((a, b) => a - b);
-        return times[0] || 0;
-    };
-
-    const bakingPizza = orders.filter(o => o.status === 'baking');
-    const grilling = orders.filter(o => o.status === 'grilling');
+    let shouldSaveToDB = false;
 
     const updatedOrders = orders.map(order => {
-        const o = { ...order };
+        if (!order || !Array.isArray(order.items)) return { ...order, _changed: false };
 
-        // 1. Čekací doby ve frontě
-        if (!o.status || o.status === 'pending') {
-            const active = o.category === 'pizza' ? bakingPizza : grilling;
-            o.estimatedWait = getWaitTime(active);
-        }
+        let orderChanged = false;
+        let allItemsDone = true;
 
-        // 2. Countdown Pizza
-        if (o.status === 'baking' && o.pizzaStartedAt && o.pizzaTotal) {
-            const elapsed = Math.floor((now - o.pizzaStartedAt) / 1000);
-            const remaining = Math.max(0, o.pizzaTotal - elapsed);
-            o.pizzaRemaining = remaining;
-            o.pizzaProgress = Math.round(((o.pizzaTotal - remaining) / o.pizzaTotal) * 100);
+        const updatedItems = order.items.map(item => {
+            const newItem = { ...item };
 
-            if (remaining === 0 && !o.pizzaAlerted) {
-                alerts.push({ type: 'pizza', item: o.item, id: o.id });
-                o.pizzaAlerted = true;
+            if (newItem.status === 'baking' || newItem.status === 'grilling') {
+                if (newItem.startTime && newItem.prepTime > 0) {
+                    const elapsed = Math.floor((now - newItem.startTime) / 1000);
+                    const remaining = Math.max(0, newItem.prepTime - elapsed);
+                    newItem.remainingTime = remaining;
+                    newItem.progress = Math.min(100, (elapsed / newItem.prepTime) * 100);
+
+                    if (remaining === 0 && newItem.status !== 'done') {
+                        newItem.status = 'done';
+                        newItem.progress = 100;
+                        alerts.push({ name: newItem.name, orderId: order.id });
+                        orderChanged = true;
+                        shouldSaveToDB = true;
+                    }
+                }
             }
+            
+            if (newItem.status !== 'done') allItemsDone = false;
+            return newItem;
+        });
+
+        if (allItemsDone && order.status !== 'done') {
+            order.status = 'done';
+            orderChanged = true;
+            shouldSaveToDB = true;
         }
 
-        // 3. Countdown Grill
-        if (o.status === 'grilling' && o.grillStartedAt && o.grillTotal) {
-            const elapsed = Math.floor((now - o.grillStartedAt) / 1000);
-            const remaining = Math.max(0, o.grillTotal - elapsed);
-            o.grillRemaining = remaining;
-            o.grillProgress = Math.round(((o.grillTotal - remaining) / o.grillTotal) * 100);
-
-            if (remaining === 0 && !o.grillAlerted) {
-                alerts.push({ type: 'grill', item: o.item, id: o.id });
-                o.grillAlerted = true;
-            }
-        }
-        return o;
+        return { ...order, items: updatedItems, _changed: orderChanged };
     });
 
-    self.postMessage({ updatedOrders, alerts });
+    self.postMessage({ updatedOrders, alerts, shouldSaveToDB });
 };

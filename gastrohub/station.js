@@ -1,6 +1,7 @@
 // station.js
 import { getAllOrders, updateOrder, archiveOrder as dbArchiveOrder } from './storage.js';
 import { useSpeech } from './composables/useSpeech.js'; // New import
+import { formatTime } from './utils.js';
  
 const { createApp, ref, onMounted, onBeforeUnmount, computed } = Vue;
 
@@ -52,11 +53,10 @@ createApp({
                         order.bakingRemaining = remaining; // Update reactive property for UI
                         if (remaining === 0 && !order.bakingAlerted) { // Prevent repeated alerts
                             const isGrill = order.item?.toLowerCase().includes('gril');
-                            const prefix = isGrill ? 'Gril' : 'Pizza';
-                            const action = isGrill ? 'je hotový' : 'je upečena';
-                            speak(`Pozor! ${prefix}: ${order.item || 'Objednávka'} ${action}!`);
+                            speak(`Pozor! ${isGrill ? 'Gril' : 'Pizza'}: ${order.item || 'Objednávka'} je hotova!`);
+                            
                             order.bakingAlerted = true;
-                            updateOrder(JSON.parse(JSON.stringify(order))); // Persist alerted state to DB
+                            updateOrder(order); // Persist alerted state to DB
                         }
                     }
                 });
@@ -79,14 +79,6 @@ createApp({
                 await dbArchiveOrder(id); // This will move it to archive store
                 await loadOrders();
             }
-        };
-
-        // Pomocné funkce pro formátování času
-        const formatTime = (seconds) => {
-            if (seconds <= 0) return "HOTOVO 🔥";
-            const mins = Math.floor(seconds / 60);
-            const secs = seconds % 60;
-            return `${mins}:${secs.toString().padStart(2, '0')}`;
         };
 
         const getProgress = (order) => {
@@ -112,7 +104,7 @@ createApp({
             startBaking,
             completeOrder,
             archiveOrder,
-            formatTime,
+            formatTime: (s) => formatTime(s, "HOTOVO 🔥"),
             getProgress,
             loadOrders
         };

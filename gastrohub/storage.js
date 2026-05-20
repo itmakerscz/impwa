@@ -9,6 +9,11 @@ const DB_VERSION = 4;
 
 let db = null;
 
+// Initialize BroadcastChannel for cross-tab synchronization
+const syncChannel = new BroadcastChannel('gastrohub_sync');
+
+const notifyTabs = () => syncChannel.postMessage({ type: 'RELOAD_REQUIRED' });
+
 const getDB = () => {
     if (db) return Promise.resolve(db);
     return new Promise((resolve, reject) => {
@@ -68,20 +73,48 @@ const incrementDailyStats = async (category) => {
 };
 
 export const saveOrder = async (order) => {
+    // Ensure we are working with a raw object to avoid Proxy cloning errors
+    const rawOrder = JSON.parse(JSON.stringify(order));
+    // Expand items into individual units for separate tracking if quantity > 1
+    const detailedItems = [];
+    (rawOrder.items || []).forEach(it => {
+        for(let i = 0; i < it.quantity; i++) {
+            detailedItems.push({
+                id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9),
+                name: it.name,
+                category: it.category,
+                status: 'pending', // Individual item status
+                prepTime: it.prepTime,
+                extras: it.extras || "", // Persist extra ingredients
+                extrasPrice: it.extrasPrice || 0,
+                isRush: it.isRush || false // Persist isRush flag
+            });
+        }
+    });
+
     const data = {
-        ...order,
+        ...rawOrder,
+        items: detailedItems,
         created_at: new Date().toISOString(),
         status: 'pending',
         sort_order: Date.now() // Initialize with timestamp for default sequential sorting
     };
     const orderId = await execute(STORE_NAME, 'readwrite', store => store.add(data));
-    await incrementDailyStats(order.category || 'pizza');
+    if (rawOrder.items) {
+        for (const it of rawOrder.items) await incrementDailyStats(it.category || 'pizza');
+    }
+    notifyTabs();
     return orderId;
 };
 
 // --- NOVÁ KLÍČOVÁ FUNKCE PRO AKTUALIZACI STAVŮ ---
-export const updateOrder = (order) => {
-    return execute(STORE_NAME, 'readwrite', store => store.put(order));
+export const updateOrder = async (order) => {
+    // IndexedDB structured clone fails on Vue 3 Proxy objects.
+    // We convert to a plain object to ensure compatibility.
+    const rawOrder = JSON.parse(JSON.stringify(order));
+    const result = await execute(STORE_NAME, 'readwrite', store => store.put(rawOrder));
+    notifyTabs();
+    return result;
 };
 
 export const getAllOrders = () => execute(STORE_NAME, 'readonly', store => store.getAll());
@@ -100,7 +133,10 @@ export const archiveOrder = async (id) => {
             archivedStore.add(orderToArchive); // Add to archive
             ordersStore.delete(id); // Delete from active orders
         };
-        tx.oncomplete = () => resolve(true);
+        tx.oncomplete = () => {
+            notifyTabs();
+            resolve(true);
+        };
         tx.onerror = (event) => reject(event.target.error);
     });
 };

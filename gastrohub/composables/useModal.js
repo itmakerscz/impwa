@@ -40,13 +40,15 @@ export function useModal() {
         icon.value = customIcon || iconMap[tType] || iconMap.info;
         confirmText.value = cText || (confirmMode ? 'Potvrdit' : 'OK');
         cancelText.value = canText || 'Zrušit';
-        isVisible.value = false;
         return new Promise((resolve) => {
             resolvePromise = resolve;
+            isVisible.value = true;
         });
     };
 
     // Shorthand helpers that map positional arguments to the options object
+    const info = (t, m, icon, cText) => alert(t, m, icon, cText);
+
     const confirm = (t, m, icon, cText, canText) => show({
         title: t, message: m, isConfirm: true, type: 'warning', icon, confirmText: cText, cancelText: canText
     });
@@ -77,6 +79,7 @@ export function useModal() {
         icon,
         confirmText,
         cancelText,
+        info,
         confirm,
         alert,
         warning,

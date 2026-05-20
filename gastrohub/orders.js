@@ -80,7 +80,6 @@ function useOrders() {
         }
     };
 
-    return { orders, searchQuery, filteredOrders, removeOrder, loadOrders, isLoading, error };
     return {
         orders, // Keep for direct access if needed, but sortedAndFilteredOrders is preferred for display
         searchQuery,

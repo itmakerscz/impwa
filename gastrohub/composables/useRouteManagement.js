@@ -1,5 +1,5 @@
 // composables/useRouteManagement.js
-import { updateOrder } from '../storage.js';
+import { updateOrder, archiveOrder } from '../storage.js';
 
 const { ref, computed } = Vue;
 
@@ -12,7 +12,7 @@ export function useRouteManagement({ dbOrders, loadOrders, modal }) {
     const selectedOrderIds = ref([]);
 
     const unassignedOrders = computed(() => 
-        dbOrders.value.filter(o => o.status === 'completed_pizza' || o.status === 'completed_grill')
+        (dbOrders.value || []).filter(o => o.status === 'done' || (o.items && o.items.every(i => i.status === 'done')))
     );
 
     const toggleOrderSelection = (id) => {
@@ -34,24 +34,44 @@ export function useRouteManagement({ dbOrders, loadOrders, modal }) {
         const totalValue = ordersToAssign.reduce((sum, order) => sum + (order.price || 0), 0);
         const orderIds = ordersToAssign.map(o => o.id);
 
-        const newRoute = {
-            id: routes.value.length + 1,
+        routes.value.push({
+            id: Date.now(), 
             courierName: courier.name,
             ordersCount: ordersToAssign.length,
             totalValue: totalValue,
             status: 'Na trase',
-            assignedOrders: orderIds
-        };
-        routes.value.push(newRoute);
+            assignedOrders: orderIds,
+            orders: [...ordersToAssign]
+        });
 
-        for (let order of ordersToAssign) {
-            await updateOrder({ ...order, status: 'delivering' });
-        }
+        // Concurrent status updates
+        await Promise.all(ordersToAssign.map(order => 
+            updateOrder({ ...order, status: 'delivering' })
+        ));
 
         selectedOrderIds.value = [];
         await loadOrders(); // Refresh global orders
         if (modal) modal.success("Trasa vytvořena", `Trasa pro ${courier.name} byla úspěšně vygenerována. Celková hodnota: ${totalValue} Kč.`);
     };
 
-    return { couriers, routes, unassignedOrders, createRoute, selectedOrderIds, toggleOrderSelection };
+    const completeRoute = async (routeId) => {
+        const routeIndex = routes.value.findIndex(r => r.id === routeId);
+        if (routeIndex === -1) return;
+        const route = routes.value[routeIndex];
+
+        try {
+            // Archive all orders associated with this route
+            for (const orderId of route.assignedOrders) {
+                await archiveOrder(orderId);
+            }
+            // Remove the route from active routes
+            routes.value.splice(routeIndex, 1);
+            await loadOrders();
+            if (modal) modal.success("Doručeno", `Trasa #${routeId} byla úspěšně uzavřena a objednávky archivovány.`);
+        } catch (err) {
+            if (modal) modal.alert("Chyba", "Nepodařilo se dokončit trasu: " + err.message);
+        }
+    };
+
+    return { couriers, routes, unassignedOrders, createRoute, completeRoute, selectedOrderIds, toggleOrderSelection };
 }

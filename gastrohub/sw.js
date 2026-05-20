@@ -1,6 +1,6 @@
 // sw.js
-// Bumping version to v2026.4 for kitchen-worker caching and Kanban drag-drop sorting
-const CACHE_NAME = 'gastrohub-core-v2026.4';
+// Bumping version to v2026.6 for comprehensive asset coverage including core modules
+const CACHE_NAME = 'gastrohub-core-v2026.6';
 
 // Array list pinning resource targets required for completely offline bootstrap runtimes
 const IMMUTABLE_ASSETS = [
@@ -8,16 +8,35 @@ const IMMUTABLE_ASSETS = [
   './index.html',
   './style.css',
   './app.js',
+  './utils.js',
+  './storage.js',
+  './parser.js',
+  './audio-processor.js',
+  './speech-synthesizer.js',
   './extractor.js',
   './kitchen-worker.js',
   './parser-worker.js',
+  './components/NavButton.js',
+  './components/KanbanColumn.js',
+  './components/StationBoard.js',
+  './components/OrderDetailForm.js',
+  './components/TabRec.js',
+  './components/TabScanner.js',
+  './components/TabRoutes.js',
+  './components/TabRoutes.css',
+  './components/TabKitchen.js',
+  './components/TabGrill.js',
+  './components/TabMenu.js',
   './composables/useOrderManager.js',
   './composables/useSpeech.js',
+  './composables/useSpeechRecognition.js',
   './composables/useKitchenStation.js',
   './composables/useScanner.js',
   './composables/useRouteManagement.js',
   './composables/useNotification.js',
   './composables/useModal.js',
+  './composables/useMenuEditor.js',
+  './composables/useMaintenance.js',
   './manifest.json',
   'https://unpkg.com/vue@3/dist/vue.global.prod.js',
   'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'
