@@ -15,7 +15,7 @@ export default defineComponent({
     },
     template: `
         <section class="card">
-            <h3>🗺️ Logistika a expedice tras</h3>
+            <h3 class="routes-header">🗺️ Logistika a expedice</h3>
             <p>Hotová jídla připravená k odběru: <b>{{ unassignedOrders.length }} ks</b></p>
 
             <div v-if="unassignedOrders.length > 0" class="unassigned-selection-area">
@@ -26,49 +26,54 @@ export default defineComponent({
                          class="selection-item"
                          :class="{ 'is-selected': selectedOrderIds.includes(order.id) }">
                         <input type="checkbox" :checked="selectedOrderIds.includes(order.id)">
-                        <b>#{{ order.id }}</b> — {{ order.item }} — <small>{{ order.address }}</small>
+                        <div class="selection-item-info">
+                            <div class="selection-item-title">#{{ order.id }} — {{ order.item }}</div>
+                            <div class="selection-item-address">📍 {{ order.address }}</div>
+                        </div>
                     </div>
                 </div>
             </div>
             
             <div class="courier-grid">
                 <div v-for="courier in couriers" :key="courier.id" class="courier-card">
-                    <h5>🚚 {{ courier.name }}</h5>
-                    <p>Stav: <span class="status-active">{{ courier.status }}</span></p>
-                    <button @click="$emit('create-route', courier)" :disabled="selectedOrderIds.length === 0" class="btn-generate-route">
+                    <h5 class="courier-name">🚚 {{ courier.name }}</h5>
+                    <p class="courier-status-text">
+                        Stav: <span class="status-active">{{ courier.status }}</span>
+                    </p>
+                    <button @click="$emit('create-route', courier)" :disabled="selectedOrderIds.length === 0" class="app-btn btn-generate-route">
                         🗺️ Generovat trasu ({{ selectedOrderIds.length }})
                     </button>
                 </div>
             </div>
 
-            <div v-if="routes.length > 0" class="active-routes-section">
-                <h4>🚀 Aktivní trasy a doručení</h4>
+            <div v-if="routes.length > 0" class="active-routes-section" style="margin-top: 32px;">
+                <h4 class="active-routes-title">🚀 Aktivní trasy a doručení</h4>
                 <div v-for="route in routes" :key="route.id" class="route-display-card">
                     <div class="route-display-header">
                         <div>
                             <b class="route-id-label">Trasa #{{ route.id }}</b>
                             <div class="route-courier-info">🚚 Kurýr: <b>{{ route.courierName }}</b></div>
                         </div>
-                        <button @click="$emit('complete-route', route.id)" class="action-btn-success btn-finish-route">
+                        <button @click="$emit('complete-route', route.id)" class="app-btn app-btn-success route-complete-btn">
                             ✅ Doručeno
                         </button>
                     </div>
                     
-                    <div class="route-display-body">
+                    <div class="route-display-body" style="padding: 16px;">
                         <div class="route-orders-list">
                             <div v-for="order in route.orders" :key="order.id" class="route-order-item">
                                 <div class="order-info-text">
-                                    <div class="order-main-detail">#{{ order.id }} - {{ order.item }}</div>
+                                    <div class="order-main-detail" style="font-weight: 500;">#{{ order.id }} - {{ order.item }}</div>
                                     <div class="order-address-detail">📍 {{ order.address }}</div>
                                 </div>
-                                <div class="order-action-links">
-                                    <a :href="'tel:' + order.phone" class="action-btn-success link-call">📞</a>
-                                    <a :href="'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(order.address)" target="_blank" class="nav-btn link-nav">📍</a>
+                                <div class="order-action-links" style="display: flex; gap: 8px;">
+                                    <a :href="'tel:' + order.phone" class="app-btn app-btn-success link-call">📞</a>
+                                    <a :href="'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(order.address)" target="_blank" class="app-btn link-nav">📍</a>
                                 </div>
                             </div>
                         </div>
                         <div class="route-qr-panel">
-                            <img :src="'https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=' + encodeURIComponent(getRouteQrData(route))" alt="QR Trasa">
+                            <img :src="'https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=' + encodeURIComponent(getRouteQrData(route))" alt="QR Trasa" class="qr-code-img">
                             <div class="qr-hint">SKEN PRO MOBIL</div>
                         </div>
                     </div>

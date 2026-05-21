@@ -1,30 +1,25 @@
 {
-  "short_name": "GastroHub",
-  "name": "GastroHub Operator Suite",
-  "description": "Integrated Delivery Receipt Scanner and Grill Master Timing Assistant.",
+  "name": "Gastrohub Kitchen System",
+  "short_name": "Gastrohub",
+  "description": "Voice-controlled kitchen management and logistics system.",
   "start_url": "./index.html",
-  "background_color": "#121212",
-  "theme_color": "#e67e22",
   "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2c3e50",
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>🍕</text></svg>",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 fill=%22%231e1e1e%22 rx=%2220%22/><text y=%2275%22 x=%2210%22 font-size=%2270%22>💼</text></svg>",
-      "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 fill=%22%231e1e1e%22 rx=%2220%22/><text y=%2275%22 x=%2210%22 font-size=%2270%22>💼</text></svg>",
+      "src": "https://cdn-icons-png.flaticon.com/512/1046/1046771.png",
+      "type": "image/png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1046/1046771.png",
+      "type": "image/png",
+      "sizes": "512x512",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "categories": ["business", "food"]
 }

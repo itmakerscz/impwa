@@ -28,7 +28,11 @@ export const PIZZA_MENU = [
     { id: 103, name: "Grilovaná žebra", category: "grill", prepTime: 1500, price: 289, aliases: ["žebra", "žebírka", "vepřová žebra", "zebra", "zebirka"] },
     { id: 104, name: "Grilované koleno", category: "grill", prepTime: 1800, price: 349, aliases: ["koleno", "vepřové koleno", "zadní koleno", "veprove koleno"] },
     { id: 105, name: "Burger menu", category: "grill", prepTime: 600, price: 219, aliases: ["burger", "hambáč", "bulka", "cheeseburger", "hambac"] },
-    { id: 106, name: "Grilovaný hermelín", category: "grill", prepTime: 600, price: 169, aliases: ["hermelín", "sýr na grilu", "hermos", "hermelin"] }
+    { id: 106, name: "Grilovaný hermelín", category: "grill", prepTime: 600, price: 169, aliases: ["hermelín", "sýr na grilu", "hermos", "hermelin"] },
+    // Drinks
+    { id: 201, name: "Coca Cola", category: "drinks", prepTime: 60, price: 45, aliases: ["kola", "cole", "colu"] },
+    { id: 202, name: "Pivo", category: "drinks", prepTime: 120, price: 55, aliases: ["pivko", "pivečko", "plzeň"] },
+    { id: 203, name: "Domácí limonáda", category: "drinks", prepTime: 180, price: 65, aliases: ["limo", "limonádu"] }
 ];
 
 const CZECH_NUMBER_MAP = {
@@ -69,7 +73,11 @@ const INGREDIENT_SYNONYMS = {
     "mozzarella": "syr",
     "niva": "syr",
     "hermelin": "syr",
+    "parmazan": "syr",
     "cibuli": "cibule",
+    "zampiony": "hriby",
+    "houby": "hriby",
+    "olivy": "olivy",
     "slaninu": "slanina",
     "sunku": "sunka",
     "vajicko": "vejce",
@@ -79,13 +87,26 @@ const INGREDIENT_SYNONYMS = {
 /**
  * Price list for ingredients when added as "extra".
  */
-const INGREDIENT_PRICES = {
+export const INGREDIENT_PRICES = {
     "syr": 20,
     "cibule": 10,
+    "hriby": 25,
+    "olivy": 15,
     "slanina": 25,
     "sunka": 20,
     "vejce": 15,
     "rajcata": 15
+};
+
+/**
+ * Parses an extras string (e.g., "➕ sýr, ❌ cibule") into an array of ingredient names.
+ * Useful for pre-populating the extras selection modal when editing.
+ * @param {string} extrasString
+ * @returns {string[]} Array of ingredient names (e.g., ['syr', 'cibule'])
+ */
+export const parseExtrasString = (extrasString) => {
+    if (!extrasString) return [];
+    return extrasString.split(', ').filter(e => e.startsWith('➕')).map(e => e.replace('➕ ', '').trim().toLowerCase());
 };
 
 /**
@@ -184,10 +205,11 @@ export const parseVoiceText = (text, userDictionary = [], customMenu = []) => {
                 const extras = modMatches.map(m => {
                     const action = m[1].toLowerCase();
                     const ingredient = INGREDIENT_SYNONYMS[m[2]] || m[2];
-                    if (["extra", "navic", "plus", "s"].includes(action)) {
+                    const isAddition = ["extra", "navic", "plus", "s"].includes(action);
+                    if (isAddition) {
                         extrasPrice += (INGREDIENT_PRICES[ingredient] || 0);
                     }
-                    return `${m[1]} ${ingredient}`;
+                    return `${isAddition ? '➕' : '❌'} ${ingredient}`;
                 }).join(", ");
                 
                 // Detect rush keyword

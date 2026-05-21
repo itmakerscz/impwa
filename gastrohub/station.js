@@ -55,6 +55,9 @@ createApp({
                             const isGrill = order.item?.toLowerCase().includes('gril');
                             speak(`Pozor! ${isGrill ? 'Gril' : 'Pizza'}: ${order.item || 'Objednávka'} je hotova!`);
                             
+                            // Haptic feedback for Android
+                            if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+                            
                             order.bakingAlerted = true;
                             updateOrder(order); // Persist alerted state to DB
                         }

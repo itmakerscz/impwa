@@ -99,6 +99,7 @@ export const saveOrder = async (order) => {
         status: 'pending',
         sort_order: Date.now() // Initialize with timestamp for default sequential sorting
     };
+    if (order.entryTime) data.entryTime = order.entryTime; // Add entryTime if provided
     const orderId = await execute(STORE_NAME, 'readwrite', store => store.add(data));
     if (rawOrder.items) {
         for (const it of rawOrder.items) await incrementDailyStats(it.category || 'pizza');

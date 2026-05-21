@@ -1,101 +1,293 @@
 /* style.css */
 :root {
+    /* Brand & Theme Colors */
     --primary: #e67e22;
-    --dark: #2c3e50;
-    --bg: #f5f6fa;
-    --card: #ffffff;
-    --border: #dcdde1;
+    --primary-dark: #d35400;
+    --grill-theme: #34495e;
+
+    /* Status Colors */
+    --success: #2ed573;
+    --warning: #f1c40f;
+    --danger: #e74c3c;
+    --info: #3498db;
+
+    /* Light Theme Tokens */
+    --bg-app: #f5f6fa;
+    --bg-card: #ffffff;
+    --bg-input: #ffffff;
+    --bg-frequent: #fff9db;
+    --bg-rush: #fff5f5;
+    --bg-progress: #ecf0f1;
+
+    --text-main: #2c3e50;
+    --text-muted: #7f8c8d;
+    --text-disabled: #95a5a6;
+    --text-contrast: #202124;
+
+    --border-color: #dcdde1;
+    --border-light: #eeeeee;
+
+    /* Design Tokens */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-full: 999px;
+
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+
+    --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "Roboto Mono", SFMono-Regular, Consolas, monospace;
+
+    --shadow-color-sm: rgba(0,0,0,0.12);
+    --shadow-color-md: rgba(0,0,0,0.05);
+    --shadow-color-lg: rgba(0,0,0,0.15);
 }
 
+/* Dark Theme Overrides */
+[data-theme='dark'] {
+    --bg-app: #1a1a1a;
+    --bg-card: #2c2c2c;
+    --bg-input: #3a3a3a;
+    --bg-frequent: #4a3a1a;
+    --bg-rush: #3a1a1a;
+    --bg-progress: #333333;
+
+    --text-main: #e0e0e0;
+    --text-muted: #a0a0a0;
+    --text-disabled: #666666;
+    --text-contrast: #ffffff;
+
+    --border-color: #444444;
+    --border-light: #333333;
+
+    --shadow-color-sm: rgba(0,0,0,0.3);
+    --shadow-color-md: rgba(0,0,0,0.2);
+    --shadow-color-lg: rgba(0,0,0,0.4);
+}
+
+/* Global Computed Shadow Attributes */
+:root, [data-theme] {
+    --shadow-sm: 0 1px 3px var(--shadow-color-sm);
+    --shadow-md: 0 4px 6px var(--shadow-color-md);
+    --shadow-lg: 0 10px 25px var(--shadow-color-lg);
+}
+
+/* --- Base Styles --- */
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background-color: var(--bg);
+    font-family: var(--font-main);
+    background-color: var(--bg-app);
     margin: 0;
-    color: #333;
+    color: var(--text-main);
+    line-height: 1.5;
+    -webkit-tap-highlight-color: transparent;
 }
 
 [v-cloak] { display: none !important; }
 
-.nav-btn {
-    background: transparent;
-    border: 1px solid rgba(255,255,255,0.4);
-    color: white;
-    padding: 8px 14px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: all 0.2s;
+/* --- Layout Utilities --- */
+.flex-group {
+    display: flex;
+    gap: var(--spacing-md);
+    align-items: center;
+    flex-wrap: wrap;
 }
 
-.nav-btn.active {
-    background: var(--primary);
-    border-color: var(--primary);
+.flex-group-between {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
+/* --- Layout: Cards & Sections --- */
 .card {
-    background: var(--card);
-    border-radius: 8px;
-    padding: 20px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-    margin-bottom: 20px;
+    background: var(--bg-card);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-lg);
+    box-shadow: var(--shadow-md);
+    margin-bottom: var(--spacing-lg);
+    border: 1px solid var(--border-color);
 }
 
-/* Kanban Sloupce Layout */
+.section-header {
+    font-size: 1.1rem;
+    color: var(--text-main);
+    margin-bottom: var(--spacing-md);
+    padding-bottom: var(--spacing-sm);
+    border-bottom: 1px solid var(--border-color);
+    font-weight: 600;
+}
+
+/* --- Station & Kanban Layout --- */
+.station-container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+}
+
 .station-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 15px;
-    margin-top: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: var(--spacing-lg);
+    align-items: start;
 }
 
-.col {
-    background: #eef2f7;
-    border-radius: 6px;
-    padding: 12px;
-    border: 1px solid var(--border);
+.kanban-column {
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-md);
+    border: 1px solid var(--border-color);
+    background: var(--bg-app);
 }
 
-.item-card {
-    background: white;
-    border-radius: 4px;
-    padding: 12px;
-    margin-bottom: 10px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+.station-card {
+    background: var(--bg-card);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-light);
+    margin-bottom: var(--spacing-md);
 }
-
-.item-card h5 { margin: 0 0 10px 0; font-size: 1.1rem; }
 
 .timer {
-    font-family: monospace;
+    font-family: var(--font-mono);
     font-size: 1.3rem;
     font-weight: bold;
     color: var(--primary);
     margin-bottom: 10px;
 }
 
-/* Tlačítka stavů */
-.action-btn-pizza { background: #e67e22; color: white; border: none; width: 100%; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-.action-btn-grill { background: #34495e; color: white; border: none; width: 100%; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-.action-btn-success { background: #2ed573; color: white; border: none; width: 100%; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-.target-done { border-left: 4px solid #2ed573; opacity: 0.8; }
-
-/* Menu Editor UI */
-.editor-form {
-    background: #f8f9fa;
-    padding: 1.5rem;
-    border-radius: 8px;
-    margin-bottom: 2rem;
-    border: 1px solid var(--border);
+/* --- Buttons --- */
+.app-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: var(--radius-full);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    min-height: 48px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 0.9rem;
+    color: white;
 }
+
+.app-btn:active {
+    transform: scale(0.98);
+}
+
+.app-btn-pizza { background: var(--primary); }
+.app-btn-grill { background: var(--grill-theme); }
+.app-btn-success { background: var(--success); }
+.app-btn-danger { background: var(--danger); }
+.app-btn-secondary { 
+    background: var(--bg-input); 
+    color: var(--text-main);
+    border: 1px solid var(--border-color);
+}
+
+.nav-btn {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.4);
+    color: white;
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    min-height: 40px;
+}
+
+.nav-btn.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    box-shadow: var(--shadow-sm);
+}
+
+.action-btn-success { 
+    background: var(--success); 
+    color: white; 
+    border: none; 
+    padding: 12px; 
+    border-radius: var(--radius-md); 
+    cursor: pointer; 
+    font-weight: bold;
+    transition: opacity 0.2s;
+}
+
+.action-btn-success:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.target-done { border-left: 4px solid var(--success); opacity: 0.8; }
+
+/* --- Menu Selection & Chips --- */
+.menu-chips-container {
+    display: flex;
+    gap: var(--spacing-sm);
+    overflow-x: auto;
+    padding-bottom: var(--spacing-sm);
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+.menu-chips-container::-webkit-scrollbar { display: none; }
+
+.menu-chip {
+    background: white;
+    border: 1px solid var(--border);
+    padding: 8px 16px;
+    border-radius: var(--radius-full);
+    white-space: nowrap;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+}
+
+.menu-chip-frequent {
+    background: var(--bg-frequent);
+    border-color: var(--warning);
+    color: var(--text-contrast);
+}
+
+/* --- Form Elements --- */
+.editor-form {
+    background: var(--bg-app);
+    padding: 1.5rem;
+    border-radius: var(--radius-md);
+    margin-bottom: 2rem;
+    border: 1px solid var(--border-color);
+}
+
 .form-group { margin-bottom: 1rem; display: flex; flex-direction: column; }
 .form-group label { font-weight: 600; margin-bottom: 0.5rem; font-size: 0.9rem; }
+
+.app-input,
 .form-input {
-    padding: 10px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
     font-size: 1rem;
+    transition: border-color 0.2s;
+    background: var(--bg-input);
+    color: var(--text-main);
 }
-.help-text { color: #7f8c8d; font-size: 0.8rem; margin-top: 4px; }
+
+.app-input:focus {
+    border-color: var(--info);
+    outline: none;
+}
+
+.help-text { color: var(--text-muted); font-size: 0.8rem; margin-top: var(--spacing-xs); }
 .empty-state { text-align: center; padding: 2rem; color: #95a5a6; border: 2px dashed var(--border); border-radius: 8px; }
 
 .menu-item-row {
@@ -103,11 +295,12 @@ body {
     justify-content: space-between;
     align-items: center;
     padding: 1rem;
-    background: white;
-    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border-color);
 }
 .menu-item-row:last-child { border-bottom: none; }
 
+/* --- Badges & Tags --- */
 .badge {
     font-size: 0.7rem;
     padding: 2px 8px;
@@ -116,15 +309,15 @@ body {
     text-transform: uppercase;
     font-weight: bold;
 }
-.badge.pizza { background: #ffeaa7; color: #d35400; }
-.badge.grill { background: #dfe6e9; color: #2d3436; }
+.badge.pizza { background: #ffeaa7; color: var(--primary-dark); }
+.badge.grill { background: #dfe6e9; color: var(--dark); }
 
-.alias-tags { margin-top: 8px; }
+.alias-tags { margin-top: var(--spacing-sm); }
 .alias-tag {
     display: inline-block;
     background: #f1f2f6;
     padding: 2px 8px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     font-size: 0.8rem;
     margin-right: 5px;
     color: #57606f;
@@ -133,13 +326,13 @@ body {
 .icon-btn { background: none; border: 1px solid #ccc; border-radius: 4px; padding: 5px 8px; cursor: pointer; margin-left: 5px; }
 .icon-btn.delete:hover { background: #ff7675; color: white; border-color: #d63031; }
 
-/* 2026 Kitchen Progress UI */
+/* --- Kitchen Progress UI --- */
 .progress-container {
     width: 100%;
-    background-color: #ecf0f1;
-    border-radius: 10px;
+    background-color: var(--bg-progress);
+    border-radius: var(--radius-full);
     height: 10px;
-    margin-bottom: 15px;
+    margin-bottom: var(--spacing-md);
     overflow: hidden;
     box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
 }
@@ -151,38 +344,98 @@ body {
 }
 
 .progress-bar.grill {
-    background-color: #c0392b;
+    background-color: var(--danger);
 }
 
 .progress-warning {
-    background-color: #f1c40f !important;
-}
-
-@keyframes pulsate {
-    0% { filter: brightness(1); }
-    50% { filter: brightness(1.4); transform: scaleY(1.1); }
-    100% { filter: brightness(1); }
+    background-color: var(--warning) !important;
 }
 
 .progress-ready {
-    background-color: #2ed573 !important;
+    background-color: var(--success) !important;
     animation: pulsate 1s infinite ease-in-out;
     box-shadow: 0 0 10px rgba(46, 213, 115, 0.5);
 }
 
-/* Rush Item Styling */
+/* --- Itemized Breakdown (Ordering Page) --- */
+.itemized-breakdown {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    margin-bottom: var(--spacing-lg);
+}
+
+.itemized-breakdown-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-light);
+    transition: background 0.2s ease;
+}
+
+.itemized-breakdown-item:last-child { border-bottom: none; }
+
+.itemized-breakdown-item.is-rush {
+    background: var(--bg-rush);
+    border-left: 4px solid var(--danger);
+}
+
+.item-main-info {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    font-weight: 600;
+}
+
+.item-number {
+    color: var(--text-disabled);
+    font-size: 0.85rem;
+    min-width: 20px;
+}
+
+.rush-icon {
+    color: var(--primary);
+    font-size: 1.1rem;
+    animation: blink-rush 1.5s infinite;
+}
+
+.item-price-total {
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+.item-details {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-left: 28px;
+    margin-top: 2px;
+}
+
+.item-extras { color: var(--primary-dark); }
+.item-removed { color: var(--text-muted); font-style: italic; }
+
+/* --- Rush Item Styling --- */
 .item-rush {
-    border-color: #e74c3c !important; /* Red border for rush items */
+    border-color: var(--danger) !important;
     box-shadow: 0 0 15px rgba(231, 76, 60, 0.6) !important; /* Stronger glow */
     animation: pulse-rush 1s infinite alternate; /* Pulsating effect */
 }
 
-@keyframes pulse-rush {
-    0% { transform: scale(1); opacity: 1; }
-    100% { transform: scale(1.01); opacity: 0.9; }
+/* --- Transcript Panel --- */
+.output-panel {
+    min-height: 100px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    font-size: 1.1rem;
 }
 
-/* Modal UI */
+.transcript-final { color: var(--text-main); }
+.transcript-interim { color: var(--info); font-style: italic; opacity: 0.7; }
+.transcript-placeholder { color: var(--text-disabled); }
+
+/* --- Modal UI --- */
 .modal-overlay {
     position: fixed;
     top: 0; left: 0; width: 100%; height: 100%;
@@ -192,9 +445,9 @@ body {
     backdrop-filter: blur(4px);
 }
 .modal-content {
-    background: white;
+    background: var(--bg-card);
     padding: 25px;
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     max-width: 400px;
     width: 90%;
     box-shadow: 0 10px 25px rgba(0,0,0,0.2);
@@ -202,8 +455,8 @@ body {
 .modal-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 15px;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
 }
 .modal-header h4 {
     margin: 0;
@@ -214,30 +467,39 @@ body {
 .modal-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 10px;
-    margin-top: 20px;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-lg);
 }
 
+/* --- Animations --- */
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(-10px); }
     to { opacity: 1; transform: translateY(0); }
 }
-.animate-fade-in {
-    animation: fadeIn 0.3s ease-out;
+
+.animate-fade-in { animation: fadeIn 0.3s ease-out; }
+
+@keyframes pulse-rush {
+    0% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(1.01); opacity: 0.9; }
 }
 
-.modal-content.success {
-    border-top: 5px solid #2ed573;
-}
-.modal-content.warning {
-    border-top: 5px solid #f1c40f;
+@keyframes blink-rush {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }
 
-.btn-danger {
-    background-color: #e74c3c !important;
+@keyframes pulsate {
+    0% { filter: brightness(1); }
+    50% { filter: brightness(1.4); transform: scaleY(1.1); }
+    100% { filter: brightness(1); }
 }
 
-/* PWA Update Banner Styles */
+.modal-content.success { border-top: 5px solid var(--success); }
+.modal-content.warning { border-top: 5px solid var(--warning); }
+.btn-danger { background-color: var(--danger) !important; }
+
+/* --- PWA Banner --- */
 .update-banner {
     background: var(--dark);
     color: white;
@@ -251,19 +513,4 @@ body {
     z-index: 1100;
     border-bottom: 3px solid var(--primary);
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-}
-
-.update-btn {
-    background: var(--primary);
-    color: white;
-    border: none;
-    padding: 6px 15px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: bold;
-    transition: transform 0.2s;
-}
-
-.update-btn:hover {
-    transform: scale(1.05);
 }

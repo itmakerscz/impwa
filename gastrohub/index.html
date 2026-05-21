@@ -45,12 +45,19 @@
                     grillCapacity,
                     pizzaActiveCount,
                     grillActiveCount,
+                    pizzaCapacityReached,
+                    grillCapacityReached,
                     isTurboMode,
                     volume,
                     unassignedOrders, couriers, routes,
                     formatTime,
                     menuItems,
-                    selectedOrderIds
+                    selectedOrderIds,
+                    canInstall,
+                    currentTheme,
+                    extrasModal,       // Pass extrasModal state
+                    INGREDIENT_PRICES, // Pass INGREDIENT_PRICES for the modal
+                    dbOrders
                 }"
                 @toggle-listening="toggleListening"
                 @confirm-order="handleConfirmOrder"
@@ -58,8 +65,10 @@
                 @reset-order="resetOrder(); resetTranscript()"
                 @start-pizza-baking="startPizzaBaking"
                 @finish-pizza-baking="finishPizzaBaking"
+                @cancel-pizza-baking="cancelPizzaBaking"
                 @start-grilling="startGrilling"
                 @finish-grilling="finishGrilling"
+                @cancel-grilling="cancelGrilling"
                 @start-scanner="startScanner"
                 @stop-scanner="stopScanner"
                 @complete-route="completeRoute"
@@ -68,6 +77,10 @@
                 @update-settings="updateSettings"
                 @toggle-turbo-mode="toggleTurboMode"
                 @reorder="handleReorder"
+                @trigger-install="installApp"
+                @toggle-theme="toggleTheme"
+                @edit-item-extras="openEditExtrasModal"
+                @remove-item="removeItemFromOrder"
             ></component>
 
             <!-- Operator Sandbox / Debug Logs -->
@@ -87,6 +100,28 @@
                     </div>
                 </div>
             </section>
+
+            <!-- Extras Selection Modal -->
+            <div v-if="extrasModal.show" class="modal-overlay" style="display: flex;">
+                <div class="modal-content animate-fade-in" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <span class="modal-icon">🍕</span>
+                        <h4>{{ extrasModal.isEditing ? 'Upravit extra ingredience' : 'Extra ingredience' }}: {{ extrasModal.item?.name }}</h4>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0;">
+                        <label v-for="(price, name) in INGREDIENT_PRICES" :key="name" 
+                               style="display: flex; align-items: center; gap: 10px; padding: 10px; background: var(--bg-app); border-radius: 8px; cursor: pointer; border: 1px solid var(--border-color);">
+                            <input type="checkbox" v-model="extrasModal.selection" :value="name" style="width: 20px; height: 20px;">
+                            <span style="flex: 1; text-transform: capitalize;">{{ name }}</span>
+                            <span style="color: var(--primary); font-weight: bold;">+{{ price }} Kč</span>
+                        </label>
+                    </div>
+                    <div class="modal-actions">
+                        <button @click="extrasModal.show = false" class="nav-btn" style="color: var(--text-main); border-color: var(--border-color);">Zrušit</button>
+                        <button @click="confirmExtras" class="action-btn-success" style="padding: 10px 25px; border-radius: 25px;">{{ extrasModal.isEditing ? 'Uložit změny' : 'Přidat položku' }}</button>
+                    </div>
+                </div>
+            </div>
 
             <!-- Custom Modal -->
             <div v-if="modal.isVisible" class="modal-overlay">

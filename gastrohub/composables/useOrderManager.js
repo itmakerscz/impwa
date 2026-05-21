@@ -47,14 +47,17 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
         let total = 0;
         let maxPrep = 0;
         const consolidated = {};
-        let primaryCategory = 'pizza'; // Default to pizza
+        let categories = new Set();
 
         itemsArray.forEach(item => {
             total += ((item.price || 0) + (item.extrasPrice || 0)) * (item.quantity || 1);
             maxPrep = Math.max(maxPrep, item.prepTime || 0);
             consolidated[item.name] = (consolidated[item.name] || 0) + (item.quantity || 1);
-            if (item.category === 'grill') primaryCategory = 'grill'; // If any grill item, order is grill
+            if (item.category) categories.add(item.category);
         });
+
+        // Priority for order classification: Grill > Pizza > Drinks
+        const primaryCategory = categories.has('grill') ? 'grill' : (categories.has('pizza') ? 'pizza' : 'drinks');
 
         const itemSummary = Object.entries(consolidated)
             .map(([name, qty]) => `${formatQty(qty)}x ${name}`)
@@ -69,70 +72,67 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
     };
 
     // Hlavní metoda, kterou volá useSpeechRecognition při ukončení řeči
-    const handleFinalResult = async (text) => {
-        const normalized = text.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
+    const handleFinalResult = async (text, isNested = false) => {
+        if (!isNested) isProcessing.value = true;
 
-        // Voice Macro: Nová objednávka
-        if (normalized.includes("novaobjednavka") || normalized.includes("nováobjednávka")) {
-            log("Příkaz: Nová objednávka zachycen.", "info");
-            resetOrder();
-            return "RESET_TRIGGERED"; // Signal to recognition to clear its buffer
-        }
-
-        // Voice Macro: Uložit objednávku
-        if (normalized.includes("ulozitobjednavku") || normalized.includes("uložitobjednávku")) {
-            log("Příkaz: Uložit objednávku zachycen.", "info");
-            // Odmažeme z textu samotný spouštěcí příkaz a vyčistíme bílé znaky
-            const cleanText = text
-                .replace(/uložit\s+objednávku/gi, "")
-                .replace(/ulozit\s+objednavku/gi, "")
-                .replace(/\s+/g, " ")
-                .trim();
-            if (cleanText) await handleFinalResult(cleanText); // Parse the actual text first
-            await handleConfirmOrder();
-            return "SAVE_TRIGGERED";
-        }
-
-        log(`Zpracovávám hlas (Worker + Menu): "${text}"`, 'log');
-
-        isProcessing.value = true;
         try {
+            const normalized = text.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
+
+            // Voice Macro: Nová objednávka
+            if (normalized.includes("novaobjednavka") || normalized.includes("nováobjednávka")) {
+                log("Příkaz: Nová objednávka zachycen.", "info");
+                resetOrder();
+                return "RESET_TRIGGERED"; // Signal to recognition to clear its buffer
+            }
+
+            // Voice Macro: Uložit objednávku
+            if (normalized.includes("ulozitobjednavku") || normalized.includes("uložitobjednávku")) {
+                log("Příkaz: Uložit objednávku zachycen.", "info");
+                // Odmažeme z textu samotný spouštěcí příkaz a vyčistíme bílé znaky
+                const cleanText = text
+                    .replace(/uložit\s+objednávku|ulozit\s+objednavku/gi, "")
+                    .replace(/\s+/g, " ")
+                    .trim();
+                if (cleanText) await handleFinalResult(cleanText, true); // Parse the actual text first
+                await handleConfirmOrder();
+                return "SAVE_TRIGGERED";
+            }
+
+            log(`Zpracovávám hlas (Worker + Menu): "${text}"`, 'log');
+
             const parsed = await parseVoiceTextAsync(text, userDictionary.value, customMenuRef.value);
             if (parsed) {
-                // Handle extra ingredients detection logic if present in parsed data
-                // This refactor assumes the items already contain an 'extras' field from the parser
                 const itemsWithExtras = parsed.items.map(it => ({
                     ...it,
                     extras: it.extras || "",
-                    isRush: it.isRush || false // Ensure isRush is passed through
+                    isRush: it.isRush || false
                 }));
 
-                // Combine existing items with newly parsed items
                 const combinedItemsArray = [...currentOrder.value.items, ...itemsWithExtras];
                 const summary = calculateOrderSummary(combinedItemsArray);
 
                 currentOrder.value = {
                     ...currentOrder.value,
-                    items: combinedItemsArray, // Update detailed items array
-                    item: summary.item, // Update summary string
+                    items: combinedItemsArray,
+                    item: summary.item,
                     address: parsed.address || currentOrder.value.address,
                     phone: parsed.phone || currentOrder.value.phone,
-                    category: summary.category, // Update category based on combined items
-                    prepTime: summary.prepTime, // Update prepTime based on combined items
-                    price: summary.price // Update total price based on combined items
+                    category: summary.category,
+                    prepTime: summary.prepTime,
+                    price: summary.price
                 };
                 log(`Parser úspěšně naplnil data objednávky.`, 'log');
             }
         } catch (err) {
-            log(`Chyba parseru: ${err.message}`, 'error', () => handleFinalResult(text));
+            log(`Chyba parseru: ${err.message}`, 'error', () => handleFinalResult(text, isNested));
         } finally {
-            isProcessing.value = false;
+            if (!isNested) isProcessing.value = false;
         }
     };
 
-    const addItemToOrder = (item) => {
+    const addItemToOrder = (item, extras = "", extrasPrice = 0) => {
         // Add the new item (with quantity 1) to the detailed items array
-        const newItem = { ...item, quantity: 1, extrasPrice: 0, isRush: false }; // Initialize isRush
+        const newItem = { ...item, quantity: 1, extrasPrice: extrasPrice, extras: extras, isRush: false }; // Initialize isRush
         const combinedItemsArray = [...currentOrder.value.items, newItem];
         const summary = calculateOrderSummary(combinedItemsArray);
 
@@ -141,6 +141,33 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
         currentOrder.value.category = summary.category;
         currentOrder.value.prepTime = summary.prepTime;
         currentOrder.value.price = summary.price;
+    };
+
+    const updateItemExtras = (index, newExtras, newExtrasPrice) => {
+        if (index >= 0 && index < currentOrder.value.items.length) {
+            const itemToUpdate = currentOrder.value.items[index];
+            itemToUpdate.extras = newExtras;
+            itemToUpdate.extrasPrice = newExtrasPrice;
+
+            // Recalculate summary for the entire order
+            const summary = calculateOrderSummary(currentOrder.value.items);
+            currentOrder.value.item = summary.item;
+            currentOrder.value.category = summary.category;
+            currentOrder.value.prepTime = summary.prepTime;
+            currentOrder.value.price = summary.price;
+        }
+    };
+
+    const removeItemFromOrder = (index) => {
+        if (index >= 0 && index < currentOrder.value.items.length) {
+            currentOrder.value.items.splice(index, 1);
+            // Recalculate summary for the remaining items
+            const summary = calculateOrderSummary(currentOrder.value.items);
+            currentOrder.value.item = summary.item;
+            currentOrder.value.category = summary.category;
+            currentOrder.value.prepTime = summary.prepTime;
+            currentOrder.value.price = summary.price;
+        }
     };
 
     const handleInterimTranscript = (text) => {
@@ -175,7 +202,8 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
                 phone: currentOrder.value.phone,
                 status: 'pending',
                 category: currentOrder.value.category,
-                prepTime: currentOrder.value.prepTime
+                prepTime: currentOrder.value.prepTime,
+                entryTime: Date.now() // Record when the order enters the queue
             });
 
             // Update item frequency stats for the "Frequent" menu section
@@ -238,6 +266,8 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
         handleConfirmOrder,
         resetOrder,
         addItemToOrder,
+        updateItemExtras, // Expose new method
+        removeItemFromOrder, // Expose new method
         addNickname,
         removeNickname,
         getAllOrders // Zpřístupnění pro synchronizaci v hlavním app.js

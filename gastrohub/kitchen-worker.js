@@ -14,7 +14,8 @@ self.onmessage = function(e) {
         if (!order || !Array.isArray(order.items)) return { ...order, _changed: false };
 
         let orderChanged = false;
-        let allItemsDone = true;
+        let maxItemRemaining = 0;
+        let itemsInProgress = 0;
 
         const updatedItems = order.items.map(item => {
             const newItem = { ...item };
@@ -29,24 +30,36 @@ self.onmessage = function(e) {
                     if (remaining === 0 && newItem.status !== 'done') {
                         newItem.status = 'done';
                         newItem.progress = 100;
-                        alerts.push({ name: newItem.name, orderId: order.id });
+                        // Send descriptive individual item alert
+                        alerts.push({ 
+                            name: newItem.name, 
+                            orderId: order.id,
+                            itemId: newItem.id,
+                            category: newItem.category
+                        });
                         orderChanged = true;
                         shouldSaveToDB = true;
+                    } else if (remaining > 0) {
+                        itemsInProgress++;
+                        if (remaining > maxItemRemaining) maxItemRemaining = remaining;
                     }
                 }
             }
-            
-            if (newItem.status !== 'done') allItemsDone = false;
             return newItem;
         });
 
-        if (allItemsDone && order.status !== 'done') {
-            order.status = 'done';
+        // The order's overall remaining time is now the maximum of its constituent items
+        const newRemaining = itemsInProgress > 0 ? maxItemRemaining : 0;
+        if (newRemaining !== order.bakingRemaining) {
             orderChanged = true;
-            shouldSaveToDB = true;
         }
 
-        return { ...order, items: updatedItems, _changed: orderChanged };
+        return { 
+            ...order, 
+            items: updatedItems, 
+            bakingRemaining: newRemaining, 
+            _changed: orderChanged 
+        };
     });
 
     self.postMessage({ updatedOrders, alerts, shouldSaveToDB });

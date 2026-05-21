@@ -20,7 +20,7 @@ import TabKitchen from './components/TabKitchen.js';
 import TabGrill from './components/TabGrill.js';
 import TabMenu from './components/TabMenu.js';
 import { AudioProcessor } from './audio-processor.js';
-import { PIZZA_MENU } from './parser.js';
+import { PIZZA_MENU, INGREDIENT_PRICES, parseExtrasString } from './parser.js';
 import { saveOrder, getAllOrders, updateOrder, archiveOrder } from './storage.js';
 import { formatTime, formatQty } from './utils.js';
 
@@ -32,8 +32,46 @@ const app = createApp({
         const currentTab = ref('rec'); // 'rec', 'kitchen', 'grill', 'scanner', 'routes', 'menu'
         const dbOrders = ref([]);
 
-        // --- Inicializace Composables pro příjem hlasu ---
+        // --- UI State & PWA ---
         const debugLogs = ref([]);
+        const updateAvailable = ref(false);
+        const canInstall = ref(false);
+        const volume = ref(0);
+
+        // --- Theme Logic ---
+        const getSystemTheme = () => window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        const currentTheme = ref(localStorage.getItem('gastrohub_theme') || getSystemTheme());
+        
+        const applyTheme = (theme) => {
+            document.documentElement.setAttribute('data-theme', theme);
+        };
+
+        const toggleTheme = () => {
+            currentTheme.value = currentTheme.value === 'light' ? 'dark' : 'light';
+            // Manually saving to localStorage acts as a user override
+            localStorage.setItem('gastrohub_theme', currentTheme.value);
+            applyTheme(currentTheme.value);
+            logToSandbox(`Režim zobrazení změněn na: ${currentTheme.value === 'dark' ? 'Tmavý' : 'Světlý'}`, 'info');
+        };
+
+        // --- PWA Installation Logic ---
+        let deferredPrompt = null;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // Prevent the mini-infobar from appearing on mobile
+            e.preventDefault();
+            // Stash the event so it can be triggered later.
+            deferredPrompt = e;
+            // Update UI notify the user they can install the PWA
+            canInstall.value = true;
+        });
+
+        window.addEventListener('appinstalled', () => {
+            canInstall.value = false;
+            deferredPrompt = null;
+            logToSandbox("Aplikace byla úspěšně nainstalována.", "success");
+        });
+
+        // --- Inicializace Composables pro příjem hlasu ---
         const logToSandbox = (msg, type = 'log', action = null) => {
             debugLogs.value.unshift({ 
                 time: new Date().toLocaleTimeString(), 
@@ -68,6 +106,7 @@ const app = createApp({
             modal: modal
         };
 
+        // --- Domain Logic Composables ---
         const menuEditor = useMenuEditor(ctx);
 
         // Combine static PIZZA_MENU with dynamic menu items from the editor
@@ -101,15 +140,43 @@ const app = createApp({
         const notification = useNotification();
         const maintenance = useMaintenance(ctx);
 
+        // --- Mobile Optimization: Screen Wake Lock ---
+        let wakeLock = null;
+        const requestWakeLock = async () => {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                } catch (err) {
+                    console.error(`${err.name}, ${err.message}`);
+                }
+            }
+        };
+
+        const releaseWakeLock = () => {
+            if (wakeLock !== null) {
+                wakeLock.release();
+                wakeLock = null;
+            }
+        };
+
+        // Re-request wake lock when page becomes visible again
+        document.addEventListener('visibilitychange', () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') requestWakeLock();
+        });
+
         // --- Audio Visualizer Setup ---
-        const volume = ref(0);
         const audioProcessor = new AudioProcessor();
 
         watch(speech.isListening, async (listening) => {
             if (listening) {
-                await audioProcessor.start((v) => {
-                    volume.value = v;
-                });
+                try {
+                    await audioProcessor.start((v) => {
+                        volume.value = v;
+                    });
+                } catch (err) {
+                    speech.stop();
+                    logToSandbox("Přístup k mikrofonu odmítnut nebo selhal: " + err.message, "error");
+                }
             } else {
                 audioProcessor.stop();
                 volume.value = 0;
@@ -117,7 +184,6 @@ const app = createApp({
         });
 
         // --- PWA Update Lifecycle (2026 Best Practice) ---
-        const updateAvailable = ref(false);
         let waitingWorker = null;
 
         const refreshApp = () => {
@@ -176,6 +242,20 @@ const app = createApp({
             }
         };
 
+        const installApp = async () => {
+            if (!deferredPrompt) return;
+            // Show the install prompt
+            deferredPrompt.prompt();
+            // Wait for the user to respond to the prompt
+            const { outcome } = await deferredPrompt.userChoice;
+            if (outcome === 'accepted') {
+                logToSandbox('Uživatel přijal instalaci.', 'success');
+            }
+            // We've used the prompt, and can't use it again
+            deferredPrompt = null;
+            canInstall.value = false;
+        };
+
         const updateSettings = ({ pizza, grill }) => {
             localStorage.setItem('gastrohub_pizza_capacity', pizza);
             localStorage.setItem('gastrohub_grill_capacity', grill);
@@ -191,278 +271,69 @@ const app = createApp({
         watch(() => orderManager.orders, loadGlobalOrders, { deep: true });
 
         // Automatically refresh data when switching to status-critical tabs
-        watch(currentTab, (newTab) => {
-            if (['kitchen', 'grill', 'routes'].includes(newTab)) {
-                loadGlobalOrders();
+        watch(currentTab, (newTab, oldTab) => {
+            const criticalTabs = ['kitchen', 'grill', 'routes'];
+            const isNewCritical = criticalTabs.includes(newTab);
+            const isOldCritical = criticalTabs.includes(oldTab);
+
+            if (isNewCritical) {
+                requestWakeLock();
+                // Only reload if moving from a non-work tab (e.g., 'rec') to a station tab
+                if (!isOldCritical) loadGlobalOrders();
+            } else if (isOldCritical) {
+                // Release wake lock when moving from a station tab back to 'rec' or 'menu'
+                releaseWakeLock();
             }
         });
 
         onMounted(() => {
             loadGlobalOrders();
-            // Perform startup maintenance
             maintenance.runMaintenance();
+            applyTheme(currentTheme.value);
         });
 
-        onBeforeUnmount(() => {
-            // Composables handle their own cleanup
+        // --- Extras Selection Modal Logic ---
+        const extrasModal = ref({
+            show: false,
+            item: null,
+            selection: [],
+            isEditing: false, 
+            editingItemIndex: null 
         });
 
         return {
-            currentTab,
-            dbOrders,
-            formatTime,
-            handleReorder,
-            debugLogs,
-            ...kitchenStation,
-            // Scanner
-            ...scanner,
-            updateSettings,
-            // Routes
-            ...routeManagement,
-            // Notifications
-            notification,
-            // Modal
-            modal,
-            // Hlasové proxy passthrough
-            ...orderManager,
-            ...speech, // Speech recognition
-            speak, // Speech synthesis for general alerts
-            // Update State
-            updateAvailable,
-            volume,
-            refreshApp,
-            // Menu Editor & Merged items
-            ...menuEditor,
-            menuItems: allMenuItems // Ensure allMenuItems takes precedence over menuEditor.menuItems
+            currentTab, dbOrders, currentTheme, debugLogs, volume, updateAvailable, canInstall,
+            formatTime, handleReorder, toggleTheme, refreshApp, installApp, updateSettings,
+            ...kitchenStation, ...scanner, ...routeManagement, ...orderManager, ...speech, ...menuEditor,
+            notification, modal, INGREDIENT_PRICES, extrasModal, speak,
+            menuItems: allMenuItems,
+            addItemToOrder: (item) => {
+                if (item.category === 'pizza' || item.category === 'grill') {
+                    extrasModal.value = { show: true, item, selection: [], isEditing: false, editingItemIndex: null };
+                } else orderManager.addItemToOrder(item);
+            },
+            openEditExtrasModal: (item, index) => {
+                extrasModal.value = { show: true, item, selection: parseExtrasString(item.extras), isEditing: true, editingItemIndex: index };
+            },
+            confirmExtras: () => {
+                const { item, selection, isEditing, editingItemIndex } = extrasModal.value;
+                const price = selection.reduce((acc, n) => acc + (INGREDIENT_PRICES[n] || 0), 0);
+                const str = selection.length ? selection.map(n => `➕ ${n}`).join(", ") : "";
+                isEditing ? orderManager.updateItemExtras(editingItemIndex, str, price) : orderManager.addItemToOrder(item, str, price);
+                extrasModal.value.show = false;
+            }
         };
     }
 });
 
-/**
- * Navigation Button Component
- */
-app.component('NavButton', {
-    props: ['id', 'activeTab', 'label', 'count'],
-    emits: ['navigate'],
-    template: `
-        <button class="nav-btn" 
-                :class="{ active: activeTab === id }" 
-                @click="$emit('navigate', id)">
-            {{ label }} <span v-if="count !== undefined && count !== null">({{ count }})</span>
-        </button>
-    `
-});
-
-app.component('KanbanColumn', KanbanColumn);
-
-/**
- * Tab Components for Dynamic Rendering
- */
-app.component('tab-rec', {
-    props: ['isListening', 'transcript', 'interimTranscript', 'currentOrder', 'volume', 'menuItems'],
-    emits: ['toggle-listening', 'confirm-order', 'add-item', 'reset-order'],
-    computed: {
-        groupedMenu() {
-            // Resilience check: handle potential missing or non-array prop
-            const items = Array.isArray(this.menuItems) ? this.menuItems : [];
-            
-            const usage = (() => {
-                try {
-                    return JSON.parse(localStorage.getItem('gastrohub_item_stats') || '{}');
-                } catch (e) { return {}; }
-            })();
-            
-            const groups = {
-                frequent: { label: '⭐ Časté', items: [] },
-                pizza: { label: '🍕 Pizzy', items: [] },
-                grill: { label: '🥩 Gril', items: [] }
-            };
-
-            if (items.length > 0) {
-                // Identify top 4 most frequent items
-                groups.frequent.items = [...items]
-                    .filter(item => usage[item.name] > 0)
-                    .sort((a, b) => (usage[b.name] || 0) - (usage[a.name] || 0))
-                    .slice(0, 4);
-                
-                // Zobrazit sekci Časté pouze pokud obsahuje alespoň 2 položky
-                if (groups.frequent.items.length < 2) {
-                    groups.frequent.items = [];
-                }
-
-                items.forEach(item => {
-                    const cat = item.category === 'grill' ? 'grill' : 'pizza';
-                    if (groups[cat]) groups[cat].items.push(item);
-                });
-            }
-
-            return groups;
-        }
-    },
-    methods: { formatQty },
-    template: `
-        <section class="card">
-            <h3>🎙️ Hlasový Zápisník</h3>
-            <div style="display: flex; align-items: center; gap: 20px;">
-                <button @click="$emit('toggle-listening')" :style="{ background: isListening ? '#e74c3c' : '#e67e22', color: 'white', border: 'none', padding: '15px 30px', borderRadius: '25px', fontSize: '1.1rem', cursor: 'pointer', margin: '15px 0' }">
-                    {{ isListening ? '🛑 Zastavit nahrávání' : '🎙️ Spustit diktování' }}
-                </button>
-                
-                <!-- Volume Meter -->
-                <div v-if="isListening" style="flex-grow: 1; height: 12px; background: #ecf0f1; border-radius: 6px; overflow: hidden; max-width: 200px;">
-                    <div :style="{ width: volume + '%', background: '#2ed573', height: '100%', transition: 'width 0.1s ease' }"></div>
-                </div>
-            </div>
-
-            <div class="output-panel" style="min-height: 100px; background: #fafafa; border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; text-align: left; margin-bottom: 15px; font-size: 1.1rem;">
-                <span style="color: #1f2937;">{{ transcript }}</span>
-                <span style="color: #9ca3af; font-style: italic;"> {{ interimTranscript }}</span>
-                <div v-if="!transcript && !interimTranscript" style="color: #9ca3af;">Zde se objeví váš text...</div>
-            </div>
-
-            <div style="margin: 15px 0; text-align: left;">
-                <h4 style="margin-bottom: 15px; font-size: 0.95rem; color: #7f8c8d;">Rychlý výběr z menu:</h4>
-                <div v-for="(group, key) in groupedMenu" :key="key" :style="key === 'frequent' && group.items.length > 0 ? { background: '#fff9db', padding: '12px', borderRadius: '12px', border: '1px dashed #f1c40f', marginBottom: '20px' } : { marginBottom: '20px' }">
-                    <div v-if="group.items.length > 0">
-                        <div style="font-size: 0.75rem; font-weight: bold; text-transform: uppercase; color: #95a5a6; margin-bottom: 8px; letter-spacing: 0.5px; border-bottom: 1px solid #eee; padding-bottom: 4px;">{{ group.label }}</div>
-                        <div style="display: flex; gap: 10px; overflow-x: auto; padding-bottom: 10px; white-space: nowrap;">
-                            <button v-for="item in group.items" :key="item.id" @click="$emit('add-item', item)" style="background: white; border: 1px solid #ddd; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-size: 1rem; display: flex; align-items: center; gap: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); flex-shrink: 0;">
-                                <span>{{ item.category === 'grill' ? '🥩' : '🍕' }}</span> {{ item.name }}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div style="background: #f1f2f6; padding: 15px; border-radius: 6px; margin-top: 15px; text-align: left;">
-                <h4>Aktuálně zpracovávaný detail</h4>
-
-                <!-- Itemized Price Breakdown -->
-                <div v-if="currentOrder.items && currentOrder.items.length > 0" style="margin: 10px 0; background: white; padding: 10px; border-radius: 6px; border: 1px solid #ddd; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
-                    <div v-for="(item, idx) in currentOrder.items" :key="idx" style="font-size: 0.85rem; margin-bottom: 8px; border-bottom: 1px dashed #eee; padding-bottom: 6px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; font-weight: 600;">
-                            <span>{{ formatQty(item.quantity) }}x {{ item.name }}</span>
-                            <span>{{ ((item.price || 0) + (item.extrasPrice || 0)) * (item.quantity || 1) }} Kč</span>
-                        </div>
-                        <div v-if="item.extras" style="font-size: 0.75rem; color: #d35400; margin-left: 10px; margin-top: 2px;">
-                            + {{ item.extras }} (+{{ item.extrasPrice }} Kč)
-                        </div>
-                        <div style="font-size: 0.75rem; color: #7f8c8d; margin-left: 10px;">
-                            Cena/ks: {{ item.price }} Kč
-                        </div>
-                    </div>
-                </div>
-
-                <div style="margin-bottom: 10px;">
-                    <label style="display:block; font-size: 0.8rem; color: #666;">Položka:</label>
-                    <input v-model="currentOrder.item" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" placeholder="Zadejte položku...">
-                </div>
-                <div style="margin-bottom: 10px;">
-                    <label style="display:block; font-size: 0.8rem; color: #666;">Adresa:</label>
-                    <input v-model="currentOrder.address" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" placeholder="Zadejte adresu...">
-                </div>
-                <div style="margin-bottom: 15px;">
-                    <label style="display:block; font-size: 0.8rem; color: #666;">Telefon:</label>
-                    <input v-model="currentOrder.phone" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;" placeholder="Zadejte telefon...">
-                </div>
-                <p style="font-size: 0.9rem;"><b>Stanice:</b> {{ currentOrder?.category === 'grill' ? '🥩 Gril' : '🍕 Pizza' }}</p>
-                <p style="font-size: 1.1rem; font-weight: bold; color: #2c3e50;">Celkem: {{ currentOrder?.price || 0 }} Kč</p>
-                <div style="display: flex; gap: 10px;">
-                    <button @click="$emit('reset-order')" style="background: #95a5a6; color: white; border: none; padding: 10px 20px; font-weight: bold; flex: 1; border-radius: 4px; cursor: pointer;">🗑️ Vymazat</button>
-                    <button @click="$emit('confirm-order')" style="background: #2ed573; color: white; border: none; padding: 10px 20px; font-weight: bold; flex: 2; border-radius: 4px; cursor: pointer;">💾 Schválit do výroby</button>
-                </div>
-            </div>
-        </section>
-    `
-});
-
-app.component('tab-kitchen', {
-    props: ['pendingPizzaOrders', 'bakingPizzaOrders', 'completedPizzaOrders', 'formatTime', 'pizzaActiveCount', 'pizzaCapacity', 'isTurboMode', 'pizzaCapacityReached'],
-    emits: ['start-pizza-baking', 'finish-pizza-baking', 'reorder'],
-    template: `
-        <station-board 
-            category="pizza"
-            :pending-orders="pendingPizzaOrders"
-            :cooking-orders="bakingPizzaOrders"
-            :completed-orders="completedPizzaOrders"
-            :active-count="pizzaActiveCount"
-            :capacity="pizzaCapacity"
-            :is-turbo-mode="isTurboMode"
-            :capacity-reached="pizzaCapacityReached"
-            :format-time="formatTime"
-            :labels="{ pending: '⏳ K pečení (Pec)', cooking: '🔥 V peci', done: '✅ Hotovo', startBtn: '🔥 Sázet do pece', finishBtn: '✅ Vyndat' }"
-            @start-action="p => $emit('start-pizza-baking', p.order, p.item)"
-            @finish-action="p => $emit('finish-pizza-baking', p.order, p.item)"
-            @reorder="$e => $emit('reorder', $e)"
-        />
-    `
-});
-
-app.component('tab-grill', {
-    props: ['pendingGrillOrders', 'grillingOrders', 'completedGrillOrders', 'formatTime', 'grillActiveCount', 'grillCapacity', 'isTurboMode', 'grillCapacityReached'],
-    emits: ['start-grilling', 'finish-grilling', 'reorder'],
-    template: `
-        <station-board 
-            category="grill"
-            :pending-orders="pendingGrillOrders"
-            :cooking-orders="grillingOrders"
-            :completed-orders="completedGrillOrders"
-            :active-count="grillActiveCount"
-            :capacity="grillCapacity"
-            :is-turbo-mode="isTurboMode"
-            :capacity-reached="grillCapacityReached"
-            :format-time="formatTime"
-            :labels="{ pending: '⏳ K přípravě (Gril)', cooking: '🥩 Na roštu', done: '📦 Expedice Gril', startBtn: '🥩 Položit na gril', finishBtn: '✅ Hotovo' }"
-            @start-action="p => $emit('start-grilling', p.order, p.item)"
-            @finish-action="p => $emit('finish-grilling', p.order, p.item)"
-            @reorder="$e => $emit('reorder', $e)"
-        />
-    `
-});
-
-app.component('tab-menu', {
-    props: ['pizzaCapacity', 'grillCapacity', 'isTurboMode'],
-    emits: ['update-settings', 'toggle-turbo-mode'],
-    data() {
-        return {
-            localPizza: this.pizzaCapacity,
-            localGrill: this.grillCapacity
-        };
-    },
-    template: `
-        <section class="card">
-            <h3>⚙️ Nastavení Systému</h3>
-            <div style="background: #f8f9fa; padding: 25px; border-radius: 12px; border: 1px solid #e1e8ed; margin-bottom: 25px;">
-                <h4 style="margin-top: 0; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; display: inline-block;">Kapacita Výroby</h4>
-                <p style="font-size: 0.9rem; color: #7f8c8d; margin-bottom: 20px;">Nastavte maximální počet položek, které lze současně zpracovávat v peci nebo na grilu.</p>
-                
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 25px;">
-                    <div class="form-group">
-                        <label style="display: block; font-weight: bold; margin-bottom: 8px;">🍕 Limit Pece (Pizzy)</label>
-                        <input type="number" v-model="localPizza" class="input-field" style="width: 100%; font-size: 1.2rem; text-align: center; border: 2px solid #ddd; border-radius: 8px; padding: 10px;">
-                    </div>
-                    <div class="form-group">
-                        <label style="display: block; font-weight: bold; margin-bottom: 8px;">🥩 Limit Grilu (Položky)</label>
-                        <input type="number" v-model="localGrill" class="input-field" style="width: 100%; font-size: 1.2rem; text-align: center; border: 2px solid #ddd; border-radius: 8px; padding: 10px;">
-                    </div>
-                </div>
-
-                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">
-                    <h4 style="margin-top: 0; color: #2c3e50; border-bottom: 2px solid #e74c3c; padding-bottom: 10px; display: inline-block;">Režim Turbo</h4>
-                    <p style="font-size: 0.9rem; color: #7f8c8d; margin-bottom: 20px;">
-                        V režimu Turbo jsou ignorovány limity kapacity pece a grilu. Použijte pouze ve špičce!
-                    </p>
-                    <button @click="$emit('toggle-turbo-mode')" :class="['action-btn-danger', { 'action-btn-success': isTurboMode }]" style="width: 100%; padding: 15px; font-size: 1.1rem;">
-                        {{ isTurboMode ? '✅ Režim Turbo ZAPNUTÝ' : '❌ Režim Turbo VYPNUTÝ' }}
-                    </button>
-                </div>
-                
-                <button @click="$emit('update-settings', { pizza: localPizza, grill: localGrill })" class="action-btn-success" style="margin-top: 30px; width: 100%; padding: 15px; font-size: 1.1rem;">
-                    💾 Uložit konfiguraci
-                </button>
-            </div>
-        </section>
-    `
-});
+app.component('nav-button', NavButton);
+app.component('kanban-column', KanbanColumn);
+app.component('station-board', StationBoard);
+app.component('tab-rec', TabRec);
+app.component('tab-kitchen', TabKitchen);
+app.component('tab-grill', TabGrill);
+app.component('tab-scanner', TabScanner);
+app.component('tab-routes', TabRoutes);
+app.component('tab-menu', TabMenu);
 
 app.mount('#app');

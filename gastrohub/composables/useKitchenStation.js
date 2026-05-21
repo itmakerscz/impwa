@@ -96,23 +96,64 @@ export function useKitchenStation({ log, dbOrders, loadOrders, modal }) {
     };
 
     // --- Actions for Kanban Columns ---
-    const updateItemStatus = async (order, item, newStatus) => {
-        if (!order || !item) return;
+    const updateItemStatus = async (order, target, newStatus) => {
+        if (!order) return;
         
         const targetOrder = dbOrders.value.find(o => o.id === order.id);
         if (!targetOrder) return;
         
-        const targetItem = targetOrder.items.find(i => i.id === item.id);
-        if (targetItem) {
-            targetItem.status = newStatus;
-            
+        let changed = false;
+        let maxPrep = 0;
+        
+        // Target can be a category string (bulk update) or an item object (single item update)
+        const isItem = target && typeof target === 'object' && target.id;
+
+        targetOrder.items.forEach(targetItem => {
+            const isMatch = isItem ? targetItem.id === target.id : targetItem.category === target;
+            if (isMatch) {
+                const canTransition = (
+                    ((newStatus === 'baking' || newStatus === 'grilling') && (targetItem.status === 'pending' || !targetItem.status)) ||
+                    (newStatus === 'done' && (targetItem.status === 'baking' || targetItem.status === 'grilling')) ||
+                    (newStatus === 'pending' && (targetItem.status === 'baking' || targetItem.status === 'grilling'))
+                );
+
+                if (canTransition) {
+                    targetItem.status = newStatus;
+                    if (newStatus === 'baking' || newStatus === 'grilling') {
+                        targetItem.startTime = Date.now();
+                        targetItem.remainingTime = targetItem.prepTime;
+                        targetItem.progress = 0;
+                        if (targetItem.prepTime > maxPrep) maxPrep = targetItem.prepTime;
+                    } else if (newStatus === 'pending') { // Reset item-level timers for cancellation
+                        targetItem.startTime = null;
+                        targetItem.remainingTime = null;
+                        targetItem.progress = 0;
+                    } else {
+                        targetItem.remainingTime = 0;
+                        targetItem.progress = 100;
+                    }
+                    changed = true;
+                }
+            }
+        });
+
+        if (changed) {
             if (newStatus === 'baking' || newStatus === 'grilling') {
-                targetItem.startTime = Date.now();
-                targetItem.remainingTime = targetItem.prepTime;
-                targetItem.progress = 0;
+                // Set order-level timers if not already set or if new item has longer prep
+                targetOrder.bakingTotal = Math.max(targetOrder.bakingTotal || 0, maxPrep || 300);
+                targetOrder.bakingRemaining = targetOrder.bakingRemaining || targetOrder.bakingTotal;
+                targetOrder.startedBakingAt = targetOrder.startedBakingAt || Date.now();
+                targetOrder.bakingAlerted = false;
+            } else if (newStatus === 'pending') { // Reset order-level timers for cancellation
+                const stillCooking = targetOrder.items.some(i => i.status === 'baking' || i.status === 'grilling');
+                if (!stillCooking) {
+                    targetOrder.bakingTotal = 0;
+                    targetOrder.bakingRemaining = 0;
+                    targetOrder.startedBakingAt = null;
+                    targetOrder.bakingAlerted = false;
+                }
             } else if (newStatus === 'done') {
-                targetItem.remainingTime = 0;
-                targetItem.progress = 100;
+                targetOrder.bakingRemaining = 0;
             }
 
             await updateOrder(targetOrder); // storage.js handles cloning
@@ -124,10 +165,12 @@ export function useKitchenStation({ log, dbOrders, loadOrders, modal }) {
         }
     };
 
-    const startPizzaBaking = (order, item) => updateItemStatus(order, item, 'baking');
-    const finishPizzaBaking = (order, item) => updateItemStatus(order, item, 'done');
-    const startGrilling = (order, item) => updateItemStatus(order, item, 'grilling');
-    const finishGrilling = (order, item) => updateItemStatus(order, item, 'done');
+    const startPizzaBaking = (order, item) => updateItemStatus(order, item || 'pizza', 'baking');
+    const finishPizzaBaking = (order, item) => updateItemStatus(order, item || 'pizza', 'done');
+    const cancelPizzaBaking = (order, item) => updateItemStatus(order, item || 'pizza', 'pending');
+    const startGrilling = (order, item) => updateItemStatus(order, item || 'grill', 'grilling');
+    const finishGrilling = (order, item) => updateItemStatus(order, item || 'grill', 'done');
+    const cancelGrilling = (order, item) => updateItemStatus(order, item || 'grill', 'pending');
 
     // Watch orders to start/stop timer automatically whenever active items appear
     watch(() => dbOrders.value, (newOrders) => {
@@ -174,6 +217,8 @@ export function useKitchenStation({ log, dbOrders, loadOrders, modal }) {
         finishPizzaBaking,
         startGrilling,
         finishGrilling,
+        cancelPizzaBaking, // Expose new cancel function
+        cancelGrilling, // Expose new cancel function
         toggleTurboMode // Expose toggle function
     };
 }
