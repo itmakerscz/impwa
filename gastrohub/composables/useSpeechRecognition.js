@@ -1,4 +1,5 @@
-const { ref, watch, onBeforeUnmount } = Vue;
+import { AudioProcessor } from '../audio-processor.js';
+const { ref, onBeforeUnmount } = Vue;
 
 // --- Constants & Configuration ---
 const CONFIG = {
@@ -6,7 +7,7 @@ const CONFIG = {
     RESTART_DELAY_MS: 400, 
     DUPLICATE_THRESHOLD: 0.85,
     LOOKBACK_WINDOW_SIZE: 3,
-    MAX_ERRORS_BEFORE_STOP: 3
+    MAX_ERRORS_BEFORE_STOP: 5
 };
 
 // --- Pure Utilities (Outside Composable) ---
@@ -43,11 +44,13 @@ export function useSpeechRecognition(onInterim, onFinal, log, isProcessing) {
     const committedParagraphs = ref([]);
 
     let isRestarting = false;
+    let shouldBeRecording = false;
     let errorCount = 0;
     let lastStartedAt = 0;
     let renderPending = false;
+    const volume = ref(0);
+    const audioProcessor = new AudioProcessor();
 
-    // --- WakeLock Sub-module ---
     const wakeLockManager = {
         lock: null,
         async request() {
@@ -78,58 +81,61 @@ export function useSpeechRecognition(onInterim, onFinal, log, isProcessing) {
         return lookbackWindow.some(pastSentence => getSimilarity(pastSentence, textSnippet) > CONFIG.DUPLICATE_THRESHOLD);
     };
 
-    const processCommand = (text) => {
-        const normalized = normalizeText(text);
-        
-        if (normalized.includes("novaobjednavka") || normalized.includes("nováobjednávka")) {
-            log("Nová objednávka inicializována...", "info");
-            vibrate([50, 30, 50]);
-            resetTranscript();
-            onFinal("nova objednavka");
-            return true;
-        }
-
-        if (normalized.includes("ulozitobjednavku") || normalized.includes("uložitobjednávku")) {
-            const cleanText = text
-                .replace(/uložit\s+objednávku|ulozit\s+objednavku/gi, "")
-                .replace(/\s+/g, " ")
-                .trim();
-            
-            log("Objednávka se ukládá...", "success");
-            vibrate(100);
-            onFinal(`uložit objednávku ${cleanText}`);
-            resetTranscript();
-            return true;
-        }
-        return false;
-    };
-
     const handleResult = (event) => {
         let currentInterim = '';
         const results = event.results;
 
         for (let i = event.resultIndex; i < results.length; ++i) {
             const res = results[i];
-            const textSnippet = res[0].transcript;
             
-            if (!textSnippet.trim() || (res[0].confidence === 0 && res.isFinal)) continue;
+            if (res[0].confidence === 0 && res.isFinal) continue;
+
+            const textSnippet = res[0].transcript;
+            if (!textSnippet.trim()) continue;
 
             if (res.isFinal) {
-                if (!processCommand(textSnippet) && !isGhostDuplicate(textSnippet)) {
+                let normalizedSnippet = normalizeText(textSnippet);
+
+                // MACRO 1: NOVÁ OBJEDNÁVKA
+                if (normalizedSnippet.includes("novaobjednavka") || normalizedSnippet.includes("nováobjednávka")) {
+                    log("Nová objednávka inicializována...", "info");
+                    vibrate([50, 30, 50]);
+                    resetTranscript();
+                    onFinal("nova objednavka");
+                    currentInterim = "";
+                    continue;
+                }
+
+                // MACRO 2: ULOŽIT OBJEDNÁVKU
+                if (normalizedSnippet.includes("ulozitobjednavku") || normalizedSnippet.includes("uložitobjednávku")) {
+                    let currentFullText = committedParagraphs.value.join(' ') + ' ' + textSnippet;
+                    let cleanSavedText = currentFullText
+                        .replace(/uložit\s+objednávku|ulozit\s+objednavku/gi, "")
+                        .replace(/\s+/g, " ")
+                        .trim();
+                    
+                    log("Objednávka se ukládá...", "success");
+                    vibrate(100);
+                    onFinal(`uložit objednávku ${cleanSavedText}`);
+                    resetTranscript();
+                    currentInterim = "";
+                    continue;
+                }
+
+                if (!isGhostDuplicate(textSnippet)) {
                     committedParagraphs.value.push(textSnippet.trim());
                     onFinal(textSnippet.trim());
+                } else {
+                    console.warn("Zablokována duplicita prohlížeče: ", textSnippet);
                 }
             } else {
-                const lower = textSnippet.toLowerCase();
-                if (lower.includes("nová objednávka") || lower.includes("uložit objednávku")) {
-                    currentInterim = "⏳ Příkaz rozpoznán...";
-                } else {
-                    // Android Fix: Interim results usually contain the whole accumulated text.
-                    // We strip the last committed paragraph to show only the currently spoken words.
-                    const lastFinal = committedParagraphs.value[committedParagraphs.value.length - 1] || "";
-                    const cleanInterim = textSnippet.toLowerCase().replace(lastFinal.toLowerCase(), "").trim();
-                    currentInterim = cleanInterim;
+                const liveCleanInterim = normalizeText(textSnippet);
+                if (liveCleanInterim.includes("novaobjednavka") || liveCleanInterim.includes("ulozitobjednavku") || 
+                    liveCleanInterim.includes("nováobjednávka") || liveCleanInterim.includes("uložitobjednávku")) {
+                    currentInterim = "";
+                    continue;
                 }
+                currentInterim += textSnippet;
             }
         }
 
@@ -160,24 +166,27 @@ export function useSpeechRecognition(onInterim, onFinal, log, isProcessing) {
         });
 
         recognition.value.onstart = () => {
-            isListening.value = true;
             isRestarting = false;
             errorCount = 0; 
             log(`Hlasový vstup aktivní (${CONFIG.LANG})`, "success");
             vibrate(30);
             wakeLockManager.request();
+            isListening.value = true;
         };
 
         recognition.value.onend = () => {
-            if (isListening.value && !isRestarting) {
+            if (shouldBeRecording) {
+                console.log("Stream přerušen. Restartuji smyčku...");
                 isRestarting = true;
                 const timeSinceLastStart = Date.now() - lastStartedAt;
-                // If it crashed immediately, wait longer before retry to avoid loop
-                const delay = timeSinceLastStart < 1500 ? 2000 : CONFIG.RESTART_DELAY_MS;
+                const delay = timeSinceLastStart < 1000 ? 1000 : CONFIG.RESTART_DELAY_MS;
                 
                 setTimeout(() => {
-                    if (isListening.value) { 
-                        try { recognition.value.start(); } catch (e) { isRestarting = false; }
+                    if (shouldBeRecording) { 
+                        try { 
+                            initRecognition();
+                            recognition.value.start(); 
+                        } catch (e) { isRestarting = false; }
                     }
                 }, delay);
             } else if (!isListening.value) {
@@ -221,16 +230,20 @@ export function useSpeechRecognition(onInterim, onFinal, log, isProcessing) {
     };
 
     // --- Public API ---
-    const start = () => {
+    const start = async () => {
         vibrate(40);
         if (!recognition.value) initRecognition();
         resetTranscript();
+        shouldBeRecording = true;
         isListening.value = true;
         isRestarting = false;
         lastStartedAt = Date.now();
         
         try {
             recognition.value.start();
+            await audioProcessor.start((v) => {
+                volume.value = v;
+            });
         } catch (e) {
             // Handle case where recognition is already running or in a weird state
             try { recognition.value.stop(); } catch(err) {}
@@ -240,9 +253,12 @@ export function useSpeechRecognition(onInterim, onFinal, log, isProcessing) {
 
     const stop = () => {
         vibrate([30, 30]);
+        shouldBeRecording = false;
         isListening.value = false;
         isRestarting = false;
         interimTranscript.value = '';
+        volume.value = 0;
+        audioProcessor.stop();
         
         try {
             if (recognition.value) {
@@ -262,7 +278,7 @@ export function useSpeechRecognition(onInterim, onFinal, log, isProcessing) {
     };
 
     const handleVisibilityChange = () => {
-        if (document.visibilityState === 'visible' && isListening.value) {
+        if (document.visibilityState === 'visible' && shouldBeRecording) {
             wakeLockManager.request();
             try { recognition.value.start(); } catch(e) { /* Safely running */ }
         }
@@ -280,6 +296,7 @@ export function useSpeechRecognition(onInterim, onFinal, log, isProcessing) {
         isListening,
         transcript,
         interimTranscript,
+        volume,
         start,
         stop,
         toggleListening,

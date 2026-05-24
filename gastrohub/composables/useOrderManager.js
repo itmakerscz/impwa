@@ -9,7 +9,7 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
     const orders = ref([]);
     const userDictionary = ref([]);
     const isProcessing = ref(false);
-    let lastProcessedText = '';
+    const lastProcessedText = ref('');
     
     // Aktuálně rozpracovaná objednávka zachycená z hlasu
     const currentOrder = ref({
@@ -51,7 +51,7 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
         let categories = new Set();
 
         itemsArray.forEach(item => {
-            total += ((item.price || 0) + (item.extrasPrice || 0)) * (item.quantity || 1);
+            total += (Number(item.price || 0) + Number(item.extrasPrice || 0)) * (item.quantity || 1);
             maxPrep = Math.max(maxPrep, item.prepTime || 0);
             consolidated[item.name] = (consolidated[item.name] || 0) + (item.quantity || 1);
             if (item.category) categories.add(item.category);
@@ -72,104 +72,83 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
         };
     };
 
+    // Helper function to update currentOrder reactive state consistently
+    const updateOrderState = (newItems, address = null, phone = null) => {
+        const summary = calculateOrderSummary(newItems);
+        currentOrder.value = {
+            ...currentOrder.value,
+            items: newItems,
+            item: summary.item,
+            category: summary.category,
+            prepTime: summary.prepTime,
+            price: summary.price,
+            address: address !== null ? address : currentOrder.value.address,
+            phone: phone !== null ? phone : currentOrder.value.phone
+        };
+    };
+
     // Hlavní metoda, kterou volá useSpeechRecognition při ukončení řeči
     const handleFinalResult = async (text, isNested = false) => {
-        const normalizedForDup = (text || "").trim().toLowerCase();
+        const rawText = (text || "").trim();
+        const normalizedForDup = rawText.toLowerCase();
         
-        // Prevence duplicitních výsledků (ghosting na Androidu)
         if (!isNested) {
             if (isProcessing.value || !normalizedForDup) return;
-            if (normalizedForDup === lastProcessedText) return;
+            if (normalizedForDup === lastProcessedText.value) return;
         }
 
         isProcessing.value = true;
-        lastProcessedText = normalizedForDup;
+        lastProcessedText.value = normalizedForDup;
 
         try {
             const normalized = text.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
 
-            if (normalized.includes("novaobjednavka") || normalized.includes("nováobjednávka")) {
+            // Macro Detection
+            if (normalized === "novaobjednavka" || normalized === "nováobjednávka") {
                 resetOrder();
                 return "RESET_TRIGGERED";
             }
 
             if (normalized.includes("ulozitobjednavku") || normalized.includes("uložitobjednávku")) {
-                const cleanText = text.replace(/uložit\s+objednávku|ulozit\s+objednavku/gi, "").trim();
+                const cleanText = rawText.replace(/uložit\s+objednávku|ulozit\s+objednavku/gi, "").trim();
                 if (cleanText) await handleFinalResult(cleanText, true);
                 await handleConfirmOrder();
                 return "SAVE_TRIGGERED";
             }
 
-            log(`Zpracovávám: "${text}"`, 'log');
+            log(`Zpracovávám: "${rawText}"`, 'log');
 
-            const parsed = await parseVoiceTextAsync(text, userDictionary.value, customMenuRef.value);
+            const parsed = await parseVoiceTextAsync(rawText, userDictionary.value, customMenuRef.value);
             if (parsed) {
-                const itemsWithExtras = parsed.items.map(it => ({
+                const newItems = parsed.items.map(it => ({
                     ...it,
                     extras: it.extras || "",
                     isRush: it.isRush || false
                 }));
 
-                const combinedItemsArray = [...currentOrder.value.items, ...itemsWithExtras];
-                const summary = calculateOrderSummary(combinedItemsArray);
-
-                currentOrder.value = {
-                    ...currentOrder.value,
-                    items: combinedItemsArray,
-                    item: summary.item,
-                    address: parsed.address || currentOrder.value.address,
-                    phone: parsed.phone || currentOrder.value.phone,
-                    category: summary.category,
-                    prepTime: summary.prepTime,
-                    price: summary.price
-                };
-                log(`Parser úspěšně naplnil data objednávky.`, 'log');
+                updateOrderState([...currentOrder.value.items, ...newItems], parsed.address, parsed.phone);
+                log('Data objednávky aktualizována parserem.', 'log');
             }
         } catch (err) {
-            log(`Chyba parseru: ${err.message}`, 'error', () => handleFinalResult(text, isNested));
+            log(`Chyba parseru: ${err.message}`, 'error', () => handleFinalResult(rawText, isNested));
         } finally {
             if (!isNested) isProcessing.value = false;
         }
     };
 
     const addItemToOrder = (item, extras = "", extrasPrice = 0) => {
-        // Add the new item (with quantity 1) to the detailed items array
         const newItem = { ...item, quantity: 1, extrasPrice: extrasPrice, extras: extras, isRush: false }; // Initialize isRush
-        const combinedItemsArray = [...currentOrder.value.items, newItem];
-        const summary = calculateOrderSummary(combinedItemsArray);
-
-        currentOrder.value.items = combinedItemsArray;
-        currentOrder.value.item = summary.item;
-        currentOrder.value.category = summary.category;
-        currentOrder.value.prepTime = summary.prepTime;
-        currentOrder.value.price = summary.price;
+        updateOrderState([...currentOrder.value.items, newItem]);
     };
 
     const updateItemExtras = (index, newExtras, newExtrasPrice) => {
-        if (index >= 0 && index < currentOrder.value.items.length) {
-            const itemToUpdate = currentOrder.value.items[index];
-            itemToUpdate.extras = newExtras;
-            itemToUpdate.extrasPrice = newExtrasPrice;
-
-            // Recalculate summary for the entire order
-            const summary = calculateOrderSummary(currentOrder.value.items);
-            currentOrder.value.item = summary.item;
-            currentOrder.value.category = summary.category;
-            currentOrder.value.prepTime = summary.prepTime;
-            currentOrder.value.price = summary.price;
-        }
+        const updatedItems = [...currentOrder.value.items];
+        updatedItems[index] = { ...updatedItems[index], extras: newExtras, extrasPrice: newExtrasPrice };
+        updateOrderState(updatedItems);
     };
 
     const removeItemFromOrder = (index) => {
-        if (index >= 0 && index < currentOrder.value.items.length) {
-            currentOrder.value.items.splice(index, 1);
-            // Recalculate summary for the remaining items
-            const summary = calculateOrderSummary(currentOrder.value.items);
-            currentOrder.value.item = summary.item;
-            currentOrder.value.category = summary.category;
-            currentOrder.value.prepTime = summary.prepTime;
-            currentOrder.value.price = summary.price;
-        }
+        updateOrderState(currentOrder.value.items.filter((_, i) => i !== index));
     };
 
     const handleInterimTranscript = (text) => {
@@ -177,31 +156,27 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
     };
 
     const handleConfirmOrder = async () => {
-        if (currentOrder.value.items.length === 0) { // Check detailed items array
+        if (currentOrder.value.items.length === 0) {
             if (modal) modal.alert('Prázdná objednávka', 'Objednávka neobsahuje žádné položky k uložení.');
             return;
         }
 
-        // Prevence duplicitních objednávek
-        // Re-fetch or use the reactive reference to ensure we check against the latest DB state
         const currentDbOrders = await getAllOrders();
         const isDuplicate = currentDbOrders.some(o => {
-            const sameItem = (o.item || "").trim() === (currentOrder.value.item || "").trim();
-            const sameAddress = (o.address || "").trim() === (currentOrder.value.address || "").trim();
-            return sameItem && sameAddress && o.status === 'pending';
+            return (o.item || "").trim() === (currentOrder.value.item || "").trim() &&
+                   (o.address || "").trim() === (currentOrder.value.address || "").trim() &&
+                   o.status === 'pending';
         });
 
         if (isDuplicate) {
             if (modal) modal.alert('Duplicitní objednávka', 'Tato objednávka již v systému čeká na zpracování.');
             return;
         }
-
-        // Prevent multiple simultaneous save operations
-        const saveInProgress = isProcessing.value && currentOrder.value.items.length > 0;
-        // If called from UI button while handleFinalResult is still running, we wait/block
-        if (!saveInProgress && isProcessing.value) return;
+        
+        if (isProcessing.value) return;
 
         try {
+            isProcessing.value = true;
             const orderId = await saveOrder({
                 item: currentOrder.value.item, // Summary string
                 items: currentOrder.value.items, // Detailed items array
@@ -210,7 +185,7 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
                 status: 'pending',
                 category: currentOrder.value.category,
                 prepTime: currentOrder.value.prepTime,
-                entryTime: Date.now() // Record when the order enters the queue
+                entryTime: Date.now()
             });
 
             // Update item frequency stats for the "Frequent" menu section
@@ -223,18 +198,19 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
             localStorage.setItem('gastrohub_item_stats', JSON.stringify(usage));
 
             log(`Objednávka #${orderId} byla úspěšně uložena do IndexedDB.`, 'log');
+            await loadOrders();
             resetOrder();
-            await loadOrders(); // Osvěžení stavu pro kuchyň a pec
             if (modal) modal.success('Objednávka uložena', `Objednávka #${orderId} byla úspěšně uložena.`);
         } catch (err) {
             log('Chyba při ukládání objednávky: ' + err.message, 'error', handleConfirmOrder);
             if (modal) modal.alert('Chyba uložení', 'Nepodařilo se uložit objednávku do databáze.');
+        } finally {
+            isProcessing.value = false;
         }
     };
 
-
     const resetOrder = () => {
-        lastProcessedText = '';
+        lastProcessedText.value = '';
         currentOrder.value = {
             item: '',
             items: [],
