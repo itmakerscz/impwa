@@ -1,3 +1,5 @@
+const { ref, watch, onBeforeUnmount } = Vue;
+
 // --- Constants & Configuration ---
 const CONFIG = {
     LANG: 'cs-CZ',
