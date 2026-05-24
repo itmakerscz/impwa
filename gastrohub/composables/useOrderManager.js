@@ -9,6 +9,7 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
     const orders = ref([]);
     const userDictionary = ref([]);
     const isProcessing = ref(false);
+    let lastProcessedText = '';
     
     // Aktuálně rozpracovaná objednávka zachycená z hlasu
     const currentOrder = ref({
@@ -73,32 +74,33 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
 
     // Hlavní metoda, kterou volá useSpeechRecognition při ukončení řeči
     const handleFinalResult = async (text, isNested = false) => {
-        if (!isNested) isProcessing.value = true;
+        const normalizedForDup = (text || "").trim().toLowerCase();
+        
+        // Prevence duplicitních výsledků (ghosting na Androidu)
+        if (!isNested) {
+            if (isProcessing.value || !normalizedForDup) return;
+            if (normalizedForDup === lastProcessedText) return;
+        }
+
+        isProcessing.value = true;
+        lastProcessedText = normalizedForDup;
 
         try {
             const normalized = text.toLowerCase().replace(/[\s.,\/#!$%\^&\*;:{}=\-_`~()]/g, "");
 
-            // Voice Macro: Nová objednávka
             if (normalized.includes("novaobjednavka") || normalized.includes("nováobjednávka")) {
-                log("Příkaz: Nová objednávka zachycen.", "info");
                 resetOrder();
-                return "RESET_TRIGGERED"; // Signal to recognition to clear its buffer
+                return "RESET_TRIGGERED";
             }
 
-            // Voice Macro: Uložit objednávku
             if (normalized.includes("ulozitobjednavku") || normalized.includes("uložitobjednávku")) {
-                log("Příkaz: Uložit objednávku zachycen.", "info");
-                // Odmažeme z textu samotný spouštěcí příkaz a vyčistíme bílé znaky
-                const cleanText = text
-                    .replace(/uložit\s+objednávku|ulozit\s+objednavku/gi, "")
-                    .replace(/\s+/g, " ")
-                    .trim();
-                if (cleanText) await handleFinalResult(cleanText, true); // Parse the actual text first
+                const cleanText = text.replace(/uložit\s+objednávku|ulozit\s+objednavku/gi, "").trim();
+                if (cleanText) await handleFinalResult(cleanText, true);
                 await handleConfirmOrder();
                 return "SAVE_TRIGGERED";
             }
 
-            log(`Zpracovávám hlas (Worker + Menu): "${text}"`, 'log');
+            log(`Zpracovávám: "${text}"`, 'log');
 
             const parsed = await parseVoiceTextAsync(text, userDictionary.value, customMenuRef.value);
             if (parsed) {
@@ -194,6 +196,11 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
             return;
         }
 
+        // Prevent multiple simultaneous save operations
+        const saveInProgress = isProcessing.value && currentOrder.value.items.length > 0;
+        // If called from UI button while handleFinalResult is still running, we wait/block
+        if (!saveInProgress && isProcessing.value) return;
+
         try {
             const orderId = await saveOrder({
                 item: currentOrder.value.item, // Summary string
@@ -227,6 +234,7 @@ export function useOrderManager({ log, modal }, customMenuRef = ref([])) {
 
 
     const resetOrder = () => {
+        lastProcessedText = '';
         currentOrder.value = {
             item: '',
             items: [],

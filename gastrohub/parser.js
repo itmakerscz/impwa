@@ -85,6 +85,52 @@ const INGREDIENT_SYNONYMS = {
 };
 
 /**
+ * Fuzzy matching utility for handling voice recognition inaccuracies in noisy kitchens.
+ * Uses Levenshtein distance to calculate similarity between 0 and 1.
+ */
+const calculateSimilarity = (s1, s2) => {
+    if (!s1 || !s2) return 0;
+    if (s1 === s2) return 1.0;
+    const longer = s1.length > s2.length ? s1 : s2;
+    const shorter = s1.length > s2.length ? s2 : s1;
+    const lLen = longer.length;
+    if (lLen === 0) return 1.0;
+
+    const costs = new Array(shorter.length + 1);
+    for (let i = 0; i <= longer.length; i++) {
+        let lastValue = i;
+        for (let j = 0; j <= shorter.length; j++) {
+            if (i === 0) costs[j] = j;
+            else if (j > 0) {
+                let newValue = costs[j - 1];
+                if (longer.charAt(i - 1) !== shorter.charAt(j - 1))
+                    newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+                costs[j - 1] = lastValue;
+                lastValue = newValue;
+            }
+        }
+        if (i > 0) costs[shorter.length] = lastValue;
+    }
+    return (lLen - costs[shorter.length]) / lLen;
+};
+
+/**
+ * Matches a word against a list of candidates and returns the best match if it exceeds the threshold.
+ */
+const fuzzyMatch = (word, candidates, threshold = 0.7) => {
+    let bestMatch = word;
+    let maxSim = 0;
+    for (const cand of candidates) {
+        const sim = calculateSimilarity(word, cand);
+        if (sim > maxSim) {
+            maxSim = sim;
+            bestMatch = cand;
+        }
+    }
+    return maxSim >= threshold ? bestMatch : word;
+};
+
+/**
  * Price list for ingredients when added as "extra".
  */
 export const INGREDIENT_PRICES = {
@@ -128,14 +174,21 @@ export const parseVoiceText = (text, userDictionary = [], customMenu = []) => {
     let cleaned = normalizeInternal(text);
     let originalCleaned = cleaned; // Keep copy for category check later
 
+    // Combine static menu with custom menu items
+    const fullMenu = [...PIZZA_MENU, ...customMenu];
+
+    // Prepare fuzzy candidates for global pre-correction
+    const menuTerms = fullMenu.flatMap(item => [item.name, ...(item.aliases || [])])
+        .map(n => normalizeInternal(Array.isArray(n) ? n[0] : n));
+    const ingredientTerms = [...new Set([...Object.keys(INGREDIENT_SYNONYMS), ...Object.keys(INGREDIENT_PRICES)])]
+        .map(n => normalizeInternal(n));
+    const allFuzzyCandidates = [...new Set([...menuTerms, ...ingredientTerms])];
+
     let phone = "";
     let address = "";
     let identifiedItemsList = [];
     let maxPrepTime = 0;
     let totalPrice = 0;
-
-    // Combine static menu with custom menu items
-    const fullMenu = [...PIZZA_MENU, ...customMenu];
 
     // Step 0: Phonetic Normalization for categories
     // This allows the item matcher to work even if the user says "pica" or "grill"
@@ -143,6 +196,13 @@ export const parseVoiceText = (text, userDictionary = [], customMenu = []) => {
         .replace(new RegExp(`\\b(${PIZZA_SYNONYMS.join('|')})\\b`, 'g'), 'pizza')
         .replace(new RegExp(`\\b(${GRILL_SYNONYMS.join('|')})\\b`, 'g'), 'grill');
     
+    // Apply global fuzzy correction to tokens to handle noise (e.g., "sunkova" -> "šunková")
+    normalizedForItems = normalizedForItems.split(/\s+/).map(token => {
+        // Skip numbers and very short words to maintain precision
+        if (token.length < 3 || !isNaN(token) || CZECH_NUMBER_MAP[token]) return token;
+        return fuzzyMatch(token, allFuzzyCandidates);
+    }).join(' ');
+
     // 1. Extract Phone Number with keyword support and flexible separators
     const phoneKeywordsPattern = PHONE_KEYWORDS.join('|');
     const phoneRegex = new RegExp(`(?:(?:${phoneKeywordsPattern})[:\\s]*)?(?:\\+?420|00420)?\\s?([1-9]\\d{2})[\\s\\-]*(\\d{3})[\\s\\-]*(\\d{3})`, 'i');
@@ -203,9 +263,12 @@ export const parseVoiceText = (text, userDictionary = [], customMenu = []) => {
                 
                 let extrasPrice = 0;
                 const extras = modMatches.map(m => {
-                    const action = m[1].toLowerCase();
-                    const ingredient = INGREDIENT_SYNONYMS[m[2]] || m[2];
+                    const action = m[1].toLowerCase(); // Corrected by token logic or raw
+                    const rawIng = m[2].toLowerCase(); // Likely corrected by Step 0
+
+                    const ingredient = INGREDIENT_SYNONYMS[rawIng] || rawIng;
                     const isAddition = ["extra", "navic", "plus", "s"].includes(action);
+
                     if (isAddition) {
                         extrasPrice += (INGREDIENT_PRICES[ingredient] || 0);
                     }

@@ -196,13 +196,14 @@ const app = createApp({
         if ('serviceWorker' in navigator) {
             // Register and monitor the Service Worker lifecycle
             navigator.serviceWorker.register('./sw.js').then(reg => {
-                // Check if a worker is already waiting from a previous load
+                // Periodic background check for updates on mobile
+                setInterval(() => { reg.update(); }, 60 * 60 * 1000); // Every hour
+
                 if (reg.waiting) {
                     waitingWorker = reg.waiting;
                     updateAvailable.value = true;
                 }
 
-                // Detect new updates found in the background
                 reg.onupdatefound = () => {
                     const newWorker = reg.installing;
                     newWorker.onstatechange = () => {
@@ -212,6 +213,12 @@ const app = createApp({
                         }
                     };
                 };
+            });
+
+            // Handle connection recovery
+            window.addEventListener('online', () => {
+                logToSandbox("Připojení obnoveno.", "success");
+                loadGlobalOrders();
             });
 
             navigator.serviceWorker.addEventListener('message', (event) => {
@@ -276,13 +283,13 @@ const app = createApp({
             const isNewCritical = criticalTabs.includes(newTab);
             const isOldCritical = criticalTabs.includes(oldTab);
 
-            if (isNewCritical) {
-                requestWakeLock();
-                // Only reload if moving from a non-work tab (e.g., 'rec') to a station tab
-                if (!isOldCritical) loadGlobalOrders();
-            } else if (isOldCritical) {
-                // Release wake lock when moving from a station tab back to 'rec' or 'menu'
-                releaseWakeLock();
+            if (isNewCritical && !isOldCritical) {
+                loadGlobalOrders();
+            }
+
+            // Auto-stop recognition when leaving the recording tab to save battery
+            if (oldTab === 'rec' && newTab !== 'rec') {
+                speech.stop();
             }
         });
 
