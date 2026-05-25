@@ -12,7 +12,7 @@ func generateQR(this js.Value, args []js.Value) interface{} {
 	}
 	dataString := args[0].String()
 
-	pngData, err := qrcode.Encode(dataString, qrcode.Medium, 256)
+	pngData, err := qrcode.Encode(dataString, qrcode.Medium, 512)
 	if err != nil {
 		return js.ValueOf("Error generating QR: " + err.Error())
 	}
