@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vanilla OCR - Preprocessing</title>
+    <style>
+        :root {
+            --primary: #8e44ad;
+            --secondary: #2980b9;
+            --upload: #e67e22;
+            --bg: #f4f7f6;
+            --text: #333;
+        }
+
+        body { 
+            font-family: system-ui, sans-serif; 
+            background-color: var(--bg);
+            color: var(--text);
+            text-align: center; 
+            margin: 0; 
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            max-width: 600px;
+            width: 100%;
+        }
+
+        .settings-panel {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .settings-panel input[type="number"] {
+            width: 50px;
+            padding: 5px;
+            font-size: 16px;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+        }
+
+        /* NEW: Image Cleanup Tools */
+        .cleanup-panel {
+            background: #fff3e0;
+            border: 1px solid #ffe0b2;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            text-align: left;
+        }
+
+        .cleanup-panel label {
+            font-weight: bold;
+            font-size: 14px;
+            color: #d35400;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        input[type="range"] { width: 100%; cursor: pointer; }
+
+        #ocrCanvas { 
+            border: 2px solid #34495e; 
+            border-radius: 4px;
+            cursor: crosshair;
+            margin: 10px 0;
+            background-color: white;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.05);
+        }
+
+        input[type="file"] { display: none; }
+        .btn-upload {
+            display: inline-block;
+            background-color: var(--upload);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-bottom: 5px;
+            transition: opacity 0.2s;
+        }
+        .btn-upload:hover { opacity: 0.9; }
+
+        .debug-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin: 15px 0;
+            font-size: 14px;
+            color: #7f8c8d;
+        }
+
+        .debug-wrapper {
+            position: relative;
+            width: 100px;
+            height: 100px;
+            border: 1px solid #e74c3c;
+        }
+
+        #debugCanvas {
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .control-group {
+            border: 1px solid #ecf0f1;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        input[type="text"] {
+            width: 60px;
+            padding: 8px;
+            font-size: 16px;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        button { 
+            color: white;
+            border: none;
+            padding: 10px 15px; 
+            font-size: 14px; 
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer; 
+            transition: opacity 0.2s;
+            margin-top: 10px;
+            width: 100%;
+        }
+
+        button:hover { opacity: 0.9; }
+        .btn-train { background-color: var(--primary); }
+        .btn-read { background-color: var(--secondary); }
+        .btn-clear { background-color: #95a5a6; width: auto; padding: 8px 15px; }
+
+        .result { font-size: 20px; font-weight: bold; margin-top: 15px; color: #2c3e50; }
+        .memory-status { font-size: 13px; color: #e67e22; margin-top: 10px; font-weight: bold;}
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Clean OCR Engine</h1>
+        
+        <div class="settings-panel">
+            <div>
+                <label for="gridSize"><strong>Resolution:</strong></label>
+                <input type="number" id="gridSize" value="10" min="3" max="30">
+            </div>
+            <button id="clearBtn" class="btn-clear">Clear Canvas</button>
+        </div>
+        
+        <div>
+            <input type="file" id="imageInput" accept="image/png, image/jpeg, image/webp">
+            <label for="imageInput" class="btn-upload">📁 Upload Image</label>
+        </div>
+
+        <div class="cleanup-panel">
+            <label for="thresholdSlider">Binarization Threshold (Clean Image): <span id="thresholdValue">128</span></label>
+            <input type="range" id="thresholdSlider" min="1" max="254" value="128">
+        </div>
+
+        <canvas id="ocrCanvas" width="250" height="250"></canvas>
+        
+        <div class="debug-container">
+            <span>Extracted Array &rarr;</span>
+            <div class="debug-wrapper">
+                <canvas id="debugCanvas"></canvas>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <h3>1. Train</h3>
+                <input type="text" id="charInput" maxlength="1" placeholder="Char">
+                <button id="trainBtn" class="btn-train">Learn Shape</button>
+            </div>
+            <div class="control-group">
+                <h3>2. Read</h3>
+                <button id="readBtn" class="btn-read">Recognize Shape</button>
+                <div id="output" class="result">Waiting...</div>
+            </div>
+        </div>
+
+        <div id="memoryStatus" class="memory-status">Memory empty.</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('ocrCanvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const debugCanvas = document.getElementById('debugCanvas');
+        const debugCtx = debugCanvas.getContext('2d', { willReadFrequently: true });
+        
+        const imageInput = document.getElementById('imageInput');
+        const thresholdSlider = document.getElementById('thresholdSlider');
+        const thresholdValue = document.getElementById('thresholdValue');
+        
+        let gridSize = 10;
+        let dictionary = {};
+        
+        // We must store the raw uploaded image so we can recalculate the threshold 
+        // without destroying the original data
+        let originalImageData = null; 
+
+        function initSettings() {
+            gridSize = parseInt(document.getElementById('gridSize').value);
+            debugCanvas.width = gridSize;
+            debugCanvas.height = gridSize;
+            dictionary = {}; 
+            updateMemoryUI();
+            clearCanvas();
+        }
+
+        function clearCanvas() {
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            debugCtx.fillStyle = "white";
+            debugCtx.fillRect(0, 0, debugCanvas.width, debugCanvas.height);
+            document.getElementById('output').textContent = "Waiting...";
+            imageInput.value = ""; 
+            originalImageData = null; // Clear raw data memory
+        }
+
+        // --- NEW: Image Preprocessing Pipeline ---
+
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    clearCanvas();
+                    
+                    const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+                    const width = img.width * scale;
+                    const height = img.height * scale;
+                    const x = (canvas.width / 2) - (width / 2);
+                    const y = (canvas.height / 2) - (height / 2);
+                    
+                    // 1. Draw raw image
+                    ctx.drawImage(img, x, y, width, height);
+                    
+                    // 2. Save raw image data to memory
+                    originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    
+                    // 3. Apply the Binarization Filter immediately
+                    applyThreshold();
+                }
+                img.src = event.target.result;
+            }
+            reader.readAsDataURL(file);
+        });
+
+        // The Binarization Function
+        function applyThreshold() {
+            if (!originalImageData) return; // Only applies to uploaded images
+
+            const threshold = parseInt(thresholdSlider.value);
+            thresholdValue.textContent = threshold;
+
+            // Create a copy of the original raw data
+            const imgData = new ImageData(
+                new Uint8ClampedArray(originalImageData.data),
+                originalImageData.width,
+                originalImageData.height
+            );
+            
+            const data = imgData.data;
+
+            for (let i = 0; i < data.length; i += 4) {
+                // Ignore empty/transparent background pixels
+                if (data[i+3] === 0) continue; 
+
+                // Rec. 601 Luma formula (accurate human-eye brightness)
+                const brightness = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+                
+                // Pure black (0) or Pure white (255) based on threshold
+                const color = brightness < threshold ? 0 : 255;
+
+                data[i]     = color; // Red
+                data[i+1]   = color; // Green
+                data[i+2]   = color; // Blue
+                data[i+3]   = 255;   // Force Full Opacity
+            }
+
+            // Put the clean, black-and-white image back onto the canvas
+            ctx.putImageData(imgData, 0, 0);
+        }
+
+        // Listen for slider changes to update the image in real-time
+        thresholdSlider.addEventListener('input', applyThreshold);
+
+        // --- Drawing Mechanics ---
+        let isDrawing = false;
+        ctx.lineWidth = 12;
+        ctx.lineCap = "round";
+        ctx.strokeStyle = "black";
+
+        canvas.addEventListener('mousedown', (e) => { 
+            isDrawing = true; 
+            originalImageData = null; // Disable binarization filter if user starts hand-drawing
+            draw(e); 
+        });
+        canvas.addEventListener('mousemove', (e) => { if (isDrawing) draw(e); });
+        window.addEventListener('mouseup', () => { isDrawing = false; ctx.beginPath(); });
+
+        function draw(e) {
+            const rect = canvas.getBoundingClientRect();
+            ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+        }
+
+        // --- Engine Processing (Simplified since canvas is already black & white) ---
+        function getBinaryArray() {
+            const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            let minX = canvas.width, minY = canvas.height, maxX = 0, maxY = 0;
+            let hasInk = false;
+
+            // Alignment
+            for (let y = 0; y < canvas.height; y++) {
+                for (let x = 0; x < canvas.width; x++) {
+                    const r = data[(y * canvas.width + x) * 4];
+                    // Since canvas is now strictly 0 or 255, we just look for dark pixels
+                    if (r < 128) {
+                        hasInk = true;
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                    }
+                }
+            }
+
+            if (!hasInk) return null;
+
+            // Crop & Scale
+            debugCtx.fillStyle = "white";
+            debugCtx.fillRect(0, 0, gridSize, gridSize);
+            debugCtx.drawImage(
+                canvas, 
+                minX, minY, maxX - minX, maxY - minY, 
+                0, 0, gridSize, gridSize
+            );
+
+            // Extract to 0s and 1s Array
+            const scaledData = debugCtx.getImageData(0, 0, gridSize, gridSize).data;
+            const binaryImage = [];
+            for (let i = 0; i < scaledData.length; i += 4) {
+                binaryImage.push(scaledData[i] < 128 ? 1 : 0);
+            }
+
+            return binaryImage;
+        }
+
+        // --- Core Interactions ---
+        function trainEngine() {
+            const char = document.getElementById('charInput').value.toUpperCase();
+            if (!char) return alert("Please type a character!");
+            
+            const binaryImage = getBinaryArray();
+            if (!binaryImage) return alert("Canvas is empty!");
+
+            dictionary[char] = binaryImage;
+            updateMemoryUI();
+            clearCanvas();
+            document.getElementById('charInput').value = "";
+        }
+
+        function recognizeShape() {
+            if (Object.keys(dictionary).length === 0) return alert("Engine is empty!");
+            
+            const binaryImage = getBinaryArray();
+            if (!binaryImage) return;
+
+            let bestMatch = "Unknown";
+            let highestScore = 0;
+            const totalPixels = gridSize * gridSize;
+
+            for (const [letter, template] of Object.entries(dictionary)) {
+                let score = 0;
+                for (let i = 0; i < totalPixels; i++) {
+                    if (binaryImage[i] === template[i]) score++;
+                }
+                const matchPercentage = (score / totalPixels) * 100;
+                if (matchPercentage > highestScore) {
+                    highestScore = matchPercentage;
+                    bestMatch = letter;
+                }
+            }
+
+            document.getElementById('output').textContent = 
+                `${bestMatch} (${highestScore.toFixed(1)}% match)`;
+        }
+
+        function updateMemoryUI() {
+            const keys = Object.keys(dictionary);
+            const status = document.getElementById('memoryStatus');
+            status.textContent = keys.length === 0 
+                ? "Memory empty." 
+                : `Engine knows: ${keys.join(', ')}`;
+        }
+
+        document.getElementById('gridSize').addEventListener('change', initSettings);
+        document.getElementById('clearBtn').addEventListener('click', clearCanvas);
+        document.getElementById('trainBtn').addEventListener('click', trainEngine);
+        document.getElementById('readBtn').addEventListener('click', recognizeShape);
+
+        initSettings();
+    </script>
+</body>
+</html>
+
