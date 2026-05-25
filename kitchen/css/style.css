@@ -42,7 +42,7 @@
         .scanner-overlay { position: fixed; inset: 0; background: #000; z-index: 100; display: flex; flex-direction: column; }
         #qr-reader { flex: 1; }
         
-        .qr-box img { max-width: 200px; height: auto; border-radius: 8px; }
+        .qr-box img { max-width: 85wv; height: auto; border-radius: 8px; }
         .sync-container { text-align: center; }
 
         .status-badge { font-size: 0.75rem; padding: 0.25rem 0.6rem; border-radius: 999px; background: #f1f5f9; }

@@ -62,7 +62,6 @@ createApp({
             }
             isScanning.value = false;
             cameraPermissionDenied.value = false;
-            manualInput.value = '';
             activeScanCallback = null;
             hasTorch.value = false;
             currentSyncQR.value = null;
@@ -147,10 +146,26 @@ createApp({
         };
 
         const submitManualInput = async () => {
-            if (manualInput.value && activeScanCallback) {
-                const data = manualInput.value;
+            if (!manualInput.value || !manualInput.value.trim()) return;
+            
+            const data = manualInput.value.trim();
+            
+            // If scanner is active, treat this as the result of the scan
+            if (activeScanCallback) {
+                const callback = activeScanCallback;
                 await stopScanner();
-                activeScanCallback(data);
+                callback(data);
+                manualInput.value = '';
+            } else if (currentRole.value && currentRole.value !== 'KITCHEN') {
+                // Stations (GRILL/PUB) can connect via manual input at any time
+                addLog("Processing manual connection string...");
+                try {
+                    await network.handleOfferAndCreateAnswer(data);
+                    addLog("Manual handshake initiated successfully.");
+                    manualInput.value = '';
+                } catch (err) {
+                    addLog(`Manual connect error: ${err.message}`);
+                }
             }
         };
 
