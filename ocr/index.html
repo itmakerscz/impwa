@@ -3,126 +3,177 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Receipt OCR Engine</title>
+    <title>Smart Receipt Scanner 2026</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         :root {
             --primary: #2c3e50;
             --secondary: #e74c3c;
+            --accent: #27ae60;
             --bg: #ecf0f1;
+            --card-bg: #ffffff;
         }
+        
+        * { box-sizing: border-box; }
+
         body { 
-            font-family: system-ui, sans-serif; 
+            font-family: system-ui, -apple-system, sans-serif; 
             background-color: var(--bg);
             color: var(--primary);
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
             padding: 20px;
             text-align: center;
         }
+
         .container {
-            background: white;
-            padding: 30px;
+            background: var(--card-bg);
+            padding: 25px;
             border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
         }
+
         input[type="file"] { display: none; }
+        
         .btn-upload {
             display: inline-block;
             background-color: var(--primary);
             color: white;
-            padding: 12px 24px;
-            border-radius: 6px;
+            padding: 14px 28px;
+            border-radius: 8px;
             cursor: pointer;
             font-weight: bold;
             font-size: 16px;
-            transition: opacity 0.2s;
+            transition: transform 0.1s, opacity 0.2s;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
-        .btn-upload:hover { opacity: 0.9; }
         
+        .btn-upload:active { transform: scale(0.98); }
+
         .preview-area {
             margin: 20px 0;
-            max-height: 400px;
-            overflow: hidden;
             border-radius: 8px;
             border: 2px dashed #bdc3c7;
-            display: flex;
-            justify-content: center;
-            align-items: center;
             background: #f8f9fa;
+            padding: 10px;
         }
+
         .preview-area img {
             max-width: 100%;
-            max-height: 400px;
+            max-height: 350px;
             object-fit: contain;
-            display: none; /* Hidden until image is uploaded */
+            display: none;
+            margin: 0 auto;
+            border-radius: 4px;
         }
 
         .status {
-            font-size: 18px;
-            font-weight: bold;
+            font-size: 16px;
+            font-weight: 600;
             color: var(--secondary);
             margin: 15px 0;
+            min-height: 24px;
         }
 
+        /* --- MOBILE FIRST DESIGN --- */
+        /* By default, sections stack as rows on mobile */
         .results-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr;
             gap: 20px;
             text-align: left;
+            margin-top: 20px;
+        }
+
+        /* On screens wider than 768px, switch to 2 columns */
+        @media (min-width: 768px) {
+            .results-grid {
+                grid-template-columns: 1fr 1fr;
+            }
         }
 
         .card {
-            background: #f8f9fa;
+            background: var(--card-bg);
             border: 1px solid #dee2e6;
-            padding: 15px;
-            border-radius: 8px;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
         }
+
+        .card h3 { margin-top: 0; color: var(--primary); border-bottom: 2px solid var(--bg); padding-bottom: 10px; }
+
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #f1f2f6;
+        }
+        
+        .data-row:last-child { border-bottom: none; }
+
+        .data-label { font-weight: 600; color: #7f8c8d; }
+        .data-value { font-weight: bold; color: var(--primary); font-size: 1.1em; }
+        
+        .highlight { font-size: 1.4em; color: var(--accent); }
 
         pre {
             white-space: pre-wrap;
             word-wrap: break-word;
-            font-size: 14px;
-            color: #333;
-            background: #fff;
-            padding: 10px;
-            border-radius: 4px;
-            border: 1px solid #ccc;
-            max-height: 300px;
+            font-size: 13px;
+            color: #555;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e1e5eb;
+            max-height: 250px;
             overflow-y: auto;
-        }
-
-        .highlight {
-            font-size: 24px;
-            color: #27ae60;
-            font-weight: bold;
+            margin: 0;
         }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h1>Receipt Scanner</h1>
-        <p>Powered by Tesseract.js (Machine Learning)</p>
+        <h2>Receipt Extractor</h2>
         
-        <input type="file" id="imageInput" accept="image/jpeg, image/png">
-        <label for="imageInput" class="btn-upload">📁 Upload Receipt Photo</label>
+        <input type="file" id="imageInput" accept="image/jpeg, image/png, image/webp">
+        <label for="imageInput" class="btn-upload">📸 Take Photo or Upload</label>
 
         <div class="preview-area">
             <img id="imagePreview" alt="Receipt Preview">
         </div>
 
-        <div id="status" class="status">Waiting for image...</div>
+        <div id="status" class="status">Ready for processing...</div>
 
         <div class="results-grid">
             <div class="card">
                 <h3>Extracted Data</h3>
-                <p><strong>Total Price:</strong> <span id="totalPrice" class="highlight">--</span></p>
+                
+                <div class="data-row">
+                    <span class="data-label">Merchant IČO:</span>
+                    <span id="val-ico" class="data-value">--</span>
+                </div>
+                
+                <div class="data-row">
+                    <span class="data-label">Order Number:</span>
+                    <span id="val-order" class="data-value">--</span>
+                </div>
+                
+                <div class="data-row">
+                    <span class="data-label">Date & Time:</span>
+                    <span id="val-date" class="data-value">--</span>
+                </div>
+
+                <div class="data-row" style="margin-top: 10px;">
+                    <span class="data-label">Total Amount:</span>
+                    <span id="val-total" class="data-value highlight">--</span>
+                </div>
             </div>
             
             <div class="card">
-                <h3>Raw Text Output</h3>
-                <pre id="rawOutput">Raw text will appear here...</pre>
+                <h3>Raw Tesseract Output</h3>
+                <pre id="rawOutput">Awaiting scan...</pre>
             </div>
         </div>
     </div>
@@ -132,56 +183,69 @@
         const imagePreview = document.getElementById('imagePreview');
         const statusText = document.getElementById('status');
         const rawOutput = document.getElementById('rawOutput');
-        const totalPrice = document.getElementById('totalPrice');
+        
+        // Data output nodes
+        const nodes = {
+            ico: document.getElementById('val-ico'),
+            order: document.getElementById('val-order'),
+            date: document.getElementById('val-date'),
+            total: document.getElementById('val-total')
+        };
+
+        function resetUI() {
+            Object.values(nodes).forEach(node => node.textContent = "--");
+            rawOutput.textContent = "";
+        }
 
         imageInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
-            // 1. Show the preview
             imagePreview.src = URL.createObjectURL(file);
             imagePreview.style.display = 'block';
+            resetUI();
             
-            // 2. Reset UI
-            statusText.textContent = "Loading AI Engine & Processing Image... (This takes a few seconds)";
-            rawOutput.textContent = "";
-            totalPrice.textContent = "--";
+            statusText.textContent = "⏳ Initializing Tesseract AI... (This takes a moment)";
 
             try {
-                // 3. Initialize Tesseract
-                // We use 'ces' for Czech language to properly recognize č, ř, ž, etc.
+                // Load Czech language to handle specific characters
                 const worker = await Tesseract.createWorker('ces');
                 
-                // 4. Run the recognition
+                statusText.textContent = "⚙️ Scanning image for text...";
                 const { data: { text } } = await worker.recognize(file);
                 
-                // 5. Output raw text
                 rawOutput.textContent = text;
-                statusText.textContent = "Scan Complete!";
+                statusText.textContent = "✅ Scan Complete!";
 
-                // 6. Data Parsing (Extracting specific info)
-                // Look for the word "CELKEM" (Total) and grab the numbers after it
-                const totalRegex = /CELKEM:\s*(\d+)\s*Kč/i;
-                const match = text.match(totalRegex);
+                // --- DATA EXTRACTION REGEX LOGIC ---
+                
+                // 1. IČO Extraction (Matches "IČO: 49923269" or similar)
+                // Allows for OCR mistakes like ICO or IČ0
+                const icoMatch = text.match(/I[CČcč][O0]:\s*(\d{6,8})/);
+                nodes.ico.textContent = icoMatch ? icoMatch[1] : "Not found";
 
-                if (match && match[1]) {
-                    totalPrice.textContent = `${match[1]} Kč`;
+                // 2. Order Number (Matches "Číslo objednávky: 061")
+                const orderMatch = text.match(/objedn[aá]vky:\s*(\d+)/i);
+                nodes.order.textContent = orderMatch ? `#${orderMatch[1]}` : "Not found";
+
+                // 3. Date & Time (Matches "Datum vystavení: 4.5.2026 15:15:03")
+                const dateMatch = text.match(/vystaven[ií]:\s*([\d\.]+\s[\d:]+)/i);
+                nodes.date.textContent = dateMatch ? dateMatch[1] : "Not found";
+
+                // 4. Total Price (Matches "CELKEM: 340 Kč" or "Hotovost: 340,00 Kč")
+                const totalMatch = text.match(/CELKEM:\s*(\d+)\s*Kč/i);
+                if (totalMatch) {
+                    nodes.total.textContent = `${totalMatch[1]} Kč`;
                 } else {
-                    // Fallback to finding the word "Hotovost" (Cash)
-                    const cashRegex = /Hotovost:\s*(\d+(?:,\d+)?)\s*Kč/i;
-                    const cashMatch = text.match(cashRegex);
-                    if (cashMatch && cashMatch[1]) {
-                        totalPrice.textContent = `${cashMatch[1]} Kč`;
-                    } else {
-                        totalPrice.textContent = "Could not find total.";
-                    }
+                    const cashMatch = text.match(/Hotovost:\s*(\d+(?:,\d+)?)\s*Kč/i);
+                    nodes.total.textContent = cashMatch ? `${cashMatch[1]} Kč` : "Not found";
                 }
 
                 await worker.terminate();
 
             } catch (error) {
                 console.error(error);
-                statusText.textContent = "An error occurred during scanning.";
+                statusText.textContent = "❌ An error occurred during scanning.";
             }
         });
     </script>
