@@ -3,11 +3,29 @@ export class WebRTCManager {
         this.onMessage = onMessageCallback;
         this.spokes = { GRILL: { peer: null, channel: null }, PUB: { peer: null, channel: null } };
         this.hub = { peer: null, channel: null };
+        this.config = {
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        };
+    }
+
+    _waitForICE(peer) {
+        return new Promise((resolve) => {
+            if (peer.iceGatheringState === 'complete') return resolve();
+            const check = () => {
+                if (peer.iceGatheringState === 'complete') {
+                    peer.removeEventListener('icegatheringstatechange', check);
+                    resolve();
+                }
+            };
+            peer.addEventListener('icegatheringstatechange', check);
+            // Fallback: resolve after 3 seconds if ICE gathering is slow
+            setTimeout(resolve, 3000);
+        });
     }
 
     // --- KITCHEN HUB ---
     async createOfferForStation(stationName) {
-        const peer = new RTCPeerConnection();
+        const peer = new RTCPeerConnection(this.config);
         this.spokes[stationName].peer = peer;
         const channel = peer.createDataChannel(`${stationName}-channel`);
         this.spokes[stationName].channel = channel;
@@ -16,6 +34,7 @@ export class WebRTCManager {
         
         const offer = await peer.createOffer();
         await peer.setLocalDescription(offer);
+        await this._waitForICE(peer);
         return JSON.stringify(peer.localDescription);
     }
 
@@ -31,7 +50,7 @@ export class WebRTCManager {
 
     // --- STATIONS (SPOKES) ---
     async handleOfferAndCreateAnswer(offerString) {
-        const peer = new RTCPeerConnection();
+        const peer = new RTCPeerConnection(this.config);
         this.hub.peer = peer;
 
         peer.ondatachannel = (e) => {
@@ -43,6 +62,7 @@ export class WebRTCManager {
         await peer.setRemoteDescription(offer);
         const answer = await peer.createAnswer();
         await peer.setLocalDescription(answer);
+        await this._waitForICE(peer);
         return JSON.stringify(peer.localDescription);
     }
 
