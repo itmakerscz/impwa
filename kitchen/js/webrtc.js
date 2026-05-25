@@ -18,11 +18,53 @@ export class WebRTCManager {
         };
     }
 
+    async _compress(str) {
+        if (typeof CompressionStream === 'undefined') {
+            this.log("CompressionStream not supported, using Base64 fallback.");
+            // 'U' prefix for Uncompressed
+            return 'U' + btoa(unescape(encodeURIComponent(str)));
+        }
+        try {
+            const stream = new Blob([str]).stream().pipeThrough(new CompressionStream('deflate'));
+            const buffer = await new Response(stream).arrayBuffer();
+            let binary = "";
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            // 'C' prefix for Compressed
+            return 'C' + btoa(binary);
+        } catch (err) {
+            this.log("Compression failed, falling back.");
+            return 'U' + btoa(unescape(encodeURIComponent(str)));
+        }
+    }
+
+    async _decompress(base64) {
+        const prefix = base64[0];
+        const payload = base64.slice(1);
+
+        if (prefix === 'U') {
+            return decodeURIComponent(escape(atob(payload)));
+        }
+
+        if (prefix === 'C' && typeof DecompressionStream !== 'undefined') {
+            const binary = atob(payload);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'));
+            return await new Response(stream).text();
+        }
+
+        // If no prefix or unsupported compression, try raw decode as last resort
+        return decodeURIComponent(escape(atob(base64)));
+    }
+
     /**
      * Strips non-essential lines from SDP to make QR codes smaller.
      * Focuses on keeping only Data Channel and connection info.
      */
-    _minimizeSDP(description) {
+    async _minimizeSDP(description) {
         const sdp = description.sdp;
         const minimized = sdp.split('\n')
             .filter(line => {
@@ -37,17 +79,19 @@ export class WebRTCManager {
             })
             .join('\n');
         
-        return JSON.stringify({
+        const json = JSON.stringify({
             t: description.type === 'offer' ? 'o' : 'a',
             s: minimized
         });
+        return await this._compress(json);
     }
 
     /**
      * Reconstructs a full RTCSessionDescription from the minimized version.
      */
-    _restoreSDP(minimizedString) {
-        const data = JSON.parse(minimizedString);
+    async _restoreSDP(compressedString) {
+        const json = await this._decompress(compressedString);
+        const data = JSON.parse(json);
         return {
             type: data.t === 'o' ? 'offer' : 'answer',
             sdp: data.s
@@ -179,11 +223,11 @@ export class WebRTCManager {
         }
 
         this.log("Offer ready for scanning.");
-        return this._minimizeSDP(peer.localDescription);
+        return await this._minimizeSDP(peer.localDescription);
     }
 
     async hubAcceptAnswer(stationName, answerString) {
-        const answer = this._restoreSDP(answerString);
+        const answer = await this._restoreSDP(answerString);
         await this.spokes[stationName].peer.setRemoteDescription(answer);
         this.log(`Remote description set for ${stationName}. Connecting...`);
     }
@@ -206,7 +250,7 @@ export class WebRTCManager {
             this.hub.channel.onmessage = (ev) => this.onMessage(JSON.parse(ev.data));
         };
 
-        const offer = this._restoreSDP(offerString);
+        const offer = await this._restoreSDP(offerString);
         
         // Analyze the incoming offer's network info
         const remoteInfo = this._extractConnectivityInfo(offer.sdp);
@@ -220,7 +264,7 @@ export class WebRTCManager {
         this.log("Waiting for ICE candidates...");
         await this._waitForICE(peer);
         this.log("Answer ready for scanning.");
-        return this._minimizeSDP(peer.localDescription);
+        return await this._minimizeSDP(peer.localDescription);
     }
 
     sendToKitchen(payload) {
