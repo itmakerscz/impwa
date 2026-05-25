@@ -56,7 +56,8 @@ createApp({
                     { 
                         fps: 20, // Increased FPS for faster recognition
                         qrbox: (viewfinderWidth, viewfinderHeight) => {
-                            return { width: viewfinderWidth * 0.7, height: viewfinderWidth * 0.7 };
+                            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                            return { width: minEdge * 0.8, height: minEdge * 0.8 };
                         }
                     },
                     async (decodedText) => {

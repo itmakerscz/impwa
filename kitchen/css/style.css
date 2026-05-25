@@ -20,7 +20,26 @@ body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--t
 .item-card { text-align: center; font-weight: 600; cursor: pointer; user-select: none; }
 .item-card:active { transform: scale(0.95); }
 .network-controls { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem; }
-.qr-box { margin-top: 1rem; text-align: center; min-height: 256px; }
+.qr-box { 
+    margin-top: 1.5rem; 
+    text-align: center; 
+    min-height: 340px; 
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.qr-box img { 
+    width: 320px;
+    max-width: 85vw;
+    height: auto;
+    aspect-ratio: 1 / 1;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    border: 16px solid white;
+    background: white;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
 .ticket { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
 .status-pending { color: #d97706; font-weight: 600; }
 .status-confirmed { color: #16a34a; font-weight: 600; }
