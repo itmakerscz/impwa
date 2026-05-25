@@ -29,7 +29,7 @@ body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--t
     align-items: center;
 }
 .qr-box img { 
-    width: 320px;
+    width: 480px;
     max-width: 85vw;
     height: auto;
     aspect-ratio: 1 / 1;
