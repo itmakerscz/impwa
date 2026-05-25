@@ -63,39 +63,54 @@ export class WebRTCManager {
 
     /**
      * Strips non-essential lines from SDP to make QR codes smaller.
-     * Focuses on keeping only Data Channel and connection info.
      */
     async _minimizeSDP(description) {
-        const sdp = description.sdp;
-        const minimized = sdp.split('\n')
+        let sdp = description.sdp;
+
+        // 1. Aggressive line filtering: Remove non-essential media attributes
+        const filteredLines = sdp.split('\n')
+            .map(line => line.trim())
             .filter(line => {
-                // Filter out media/extension lines we don't need for DataChannels
-                return !line.startsWith('a=extmap') &&
-                       !line.startsWith('a=rtcp') &&
-                       !line.startsWith('a=msid') &&
-                       !line.startsWith('a=ssrc') &&
-                       !line.startsWith('a=group') &&
-                       !line.startsWith('a=fmtp') &&
-                       !line.startsWith('a=rtpmap');
-            })
-            .join('\n');
-        
-        const json = JSON.stringify({
-            t: description.type === 'offer' ? 'o' : 'a',
-            s: minimized
+                if (!line) return false;
+                const ignorePrefixes = [
+                    'a=extmap:', 'a=rtcp:', 'a=rtcp-fb:', 'a=msid:', 'a=ssrc:', 
+                    'a=group:', 'a=fmtp:', 'a=rtpmap:', 'a=msid-semantic:', 
+                    'a=ice-options:', 'a=bundle-only'
+                ];
+                return !ignorePrefixes.some(prefix => line.startsWith(prefix));
+            });
+
+        // 2. Candidate Pruning: Keep only 1 host (LAN) and 1 relay (TURN) candidate.
+        // This is the single most effective way to shrink SDP for QR codes.
+        let hostCount = 0;
+        let relayCount = 0;
+        const finalLines = filteredLines.filter(line => {
+            if (line.startsWith('a=candidate:')) {
+                if (line.includes('typ host') && hostCount < 1) { hostCount++; return true; }
+                if (line.includes('typ relay') && relayCount < 1) { relayCount++; return true; }
+                return false; 
+            }
+            return true;
         });
-        return await this._compress(json);
+
+        const minimizedSdp = finalLines.join('\n');
+        const typeChar = description.type === 'offer' ? 'o' : 'a';
+        
+        // 3. Use a flat format [type][sdp] instead of JSON to save structural bytes
+        return await this._compress(typeChar + minimizedSdp);
     }
 
     /**
      * Reconstructs a full RTCSessionDescription from the minimized version.
      */
     async _restoreSDP(compressedString) {
-        const json = await this._decompress(compressedString);
-        const data = JSON.parse(json);
+        const decoded = await this._decompress(compressedString);
+        const typeChar = decoded[0];
+        const sdp = decoded.slice(1);
+
         return {
-            type: data.t === 'o' ? 'offer' : 'answer',
-            sdp: data.s
+            type: typeChar === 'o' ? 'offer' : 'answer',
+            sdp: sdp
         };
     }
 

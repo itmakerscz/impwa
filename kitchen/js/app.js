@@ -77,12 +77,21 @@ createApp({
             
             try {
                 await html5QrCode.start(
-                    { facingMode: "environment" },
                     { 
-                        fps: 20, // Increased FPS for faster recognition
+                        facingMode: "environment",
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    { 
+                        fps: 15,
                         qrbox: (viewfinderWidth, viewfinderHeight) => {
                             const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                            return { width: minEdge * 0.8, height: minEdge * 0.8 };
+                            const size = Math.floor(minEdge * 0.7);
+                            return { width: size, height: size };
+                        },
+                        aspectRatio: 1.0,
+                        experimentalFeatures: {
+                            useBarCodeDetectorIfSupported: true
                         }
                     },
                     async (decodedText) => {
@@ -91,11 +100,17 @@ createApp({
                     }
                 );
                 
-                // Check if the camera supports torch
-                const track = html5QrCode.getRunningTrackCapabilities();
-                if (track.torch) {
-                    hasTorch.value = true;
-                }
+                // Delay capability check to ensure hardware stabilization
+                setTimeout(() => {
+                    try {
+                        const capabilities = html5QrCode.getRunningTrackCapabilities();
+                        if (capabilities && capabilities.torch) {
+                            hasTorch.value = true;
+                        }
+                    } catch (e) {
+                        console.warn("Camera capabilities not fully available yet:", e);
+                    }
+                }, 500);
             } catch (err) {
                 console.error("Scanner error:", err);
                 cameraPermissionDenied.value = true;
