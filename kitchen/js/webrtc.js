@@ -4,10 +4,10 @@ export class WebRTCManager {
         this.onStatusChange = onStatusChange;
         this.log = (msg) => logger(`[WebRTC] ${msg}`);
         this.spokes = { 
-            GRILL: { peer: null, channel: null, pollAbort: null }, 
-            PUB: { peer: null, channel: null, pollAbort: null } 
+            GRILL: { peer: null, channel: null, pollAbort: null, heartbeat: null }, 
+            PUB: { peer: null, channel: null, pollAbort: null, heartbeat: null } 
         };
-        this.hub = { peer: null, channel: null };
+        this.hub = { peer: null, channel: null, heartbeat: null };
         this.config = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -17,6 +17,14 @@ export class WebRTCManager {
             ]
         };
         this.signalingServer = null; // No server needed for Serverless mode
+
+        // Register this instance in the Wasm peer registry
+        if (window.registerPeer) {
+            window.registerPeer('LOCAL_PEER', (from, signal) => {
+                this.log(`Received signal from ${from} via Wasm bus`);
+                // Logic to route internal signals (e.g., from a Service Worker)
+            });
+        }
     }
 
     /**
@@ -114,10 +122,12 @@ export class WebRTCManager {
                 this.log(`${name} connection lost. Cleaning up...`);
                 // Clear references so a new connection can be established
                 if (this.spokes[name] && this.spokes[name].pollAbort) this.spokes[name].pollAbort.abort();
-                if (this.hub.peer === peer) this.hub = { peer: null, channel: null };
+                this._stopHeartbeat(name);
+
+                if (this.hub.peer === peer) this.hub = { peer: null, channel: null, heartbeat: null };
                 for (const station in this.spokes) {
                     if (this.spokes[station].peer === peer) {
-                        this.spokes[station] = { peer: null, channel: null };
+                        this.spokes[station] = { peer: null, channel: null, pollAbort: null, heartbeat: null };
                     }
                 }
             }
@@ -199,9 +209,41 @@ export class WebRTCManager {
         });
     }
 
+    _startHeartbeat(name, channel) {
+        this._stopHeartbeat(name);
+        const target = name === 'Kitchen' ? this.hub : this.spokes[name];
+        
+        target.heartbeat = setInterval(() => {
+            if (channel.readyState === 'open') {
+                // Check buffer to prevent congestion
+                if (channel.bufferedAmount > 1024 * 1024) {
+                    this.log(`Warning: ${name} channel buffer congested (${channel.bufferedAmount} bytes)`);
+                    return;
+                }
+                channel.send(JSON.stringify({ type: 'HEARTBEAT', ts: Date.now() }));
+            } else {
+                this._stopHeartbeat(name);
+            }
+        }, 5000); // 5 second heartbeat
+    }
+
+    _stopHeartbeat(name) {
+        const target = name === 'Kitchen' ? this.hub : this.spokes[name];
+        if (target && target.heartbeat) {
+            clearInterval(target.heartbeat);
+            target.heartbeat = null;
+        }
+    }
+
     _setupChannel(channel, name) {
-        channel.onopen = () => this.log(`Channel ${name} is OPEN`);
-        channel.onclose = () => this.log(`Channel ${name} is CLOSED`);
+        channel.onopen = () => {
+            this.log(`Channel ${name} is OPEN`);
+            this._startHeartbeat(name, channel);
+        };
+        channel.onclose = () => {
+            this.log(`Channel ${name} is CLOSED`);
+            this._stopHeartbeat(name);
+        };
         channel.onerror = (err) => this.log(`Channel ${name} ERROR: ${err.message}`);
         return channel;
     }

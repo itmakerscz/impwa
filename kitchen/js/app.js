@@ -211,10 +211,19 @@ createApp({
 
         const renderQR = (dataString, containerId) => {
             if (!goWasmLoaded) return alert("Wasm loading...");
-            const qrDataURI = window.generateGolangQRCode(dataString);
+            const result = window.generateGolangQRCode(dataString);
+            
+            if (result.startsWith("Error")) {
+                addLog(result);
+                return null;
+            }
+
             const el = document.getElementById(containerId);
-            if (el) el.innerHTML = `<img src="${qrDataURI}" alt="QR" />`;
-            return qrDataURI;
+            if (el) el.innerHTML = `<img src="${result}" alt="QR Code" style="width: 100%; height: 100%; image-rendering: pixelated;" />`;
+            
+            // Allow result to be GC'd by not returning it if not needed
+            const temp = result;
+            return null; 
         };
 
         const setRole = (role) => currentRole.value = role;
@@ -239,6 +248,7 @@ createApp({
                 if (answerStr) {
                     await network.hubAcceptAnswer(pendingStationSync, answerStr);
                     addLog(`Answer received for ${pendingStationSync}. Connecting...`);
+                    answerStr = null; // Clear large string reference
                 }
             });
         };
@@ -249,13 +259,13 @@ createApp({
         const scanKitchenQR = () => {
             startScanner(async (offerStr) => {
                 if (offerStr) {
-                    const answerStr = await network.handleOfferAndCreateAnswer(offerStr);
+                    let answerStr = await network.handleOfferAndCreateAnswer(offerStr);
                     stationAnswerQR.value = answerStr;
                     addLog("Answer generated! Show this QR to the Kitchen Hub.");
                     
-                    // Render the answer QR for the Hub to scan back
                     nextTick(() => {
                         renderQR(answerStr, 'station-answer-qr-container');
+                        answerStr = null; 
                     });
                 }
             });
