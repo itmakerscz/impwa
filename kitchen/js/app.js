@@ -50,6 +50,7 @@ createApp({
         const hasTorch = ref(false);
         const isTorchOn = ref(false);
         const manualInput = ref('');
+        const currentFacingMode = ref('environment');
         const currentSyncQR = ref(null);
         let activeScanCallback = null;
 
@@ -95,11 +96,11 @@ createApp({
             
             try {
                 await html5QrCode.start(
-                    { facingMode: "environment" },
+                    { facingMode: currentFacingMode.value },
                     { 
                         fps: 15,
                         videoConstraints: { 
-                            facingMode: "environment",
+                            facingMode: currentFacingMode.value,
                             width: { ideal: 720 }, 
                             height: { ideal: 720 } 
                         },
@@ -135,6 +136,17 @@ createApp({
                 cameraPermissionDenied.value = true;
                 isScanning.value = false;
                 if (err.name === 'NotAllowedError') alert("Camera permission denied.");
+            }
+        };
+
+        const switchCamera = async () => {
+            // Toggle between 'environment' (back) and 'user' (front)
+            currentFacingMode.value = currentFacingMode.value === 'environment' ? 'user' : 'environment';
+            
+            if (isScanning.value && activeScanCallback) {
+                const callback = activeScanCallback;
+                await stopScanner();
+                await startScanner(callback);
             }
         };
 
@@ -244,7 +256,7 @@ createApp({
             currentRole, setRole, inventory, kitchenTickets, myRequests, debugLogs, currentSyncQR, stationStatus,
             generateSyncQR, markAsDispatched, scanKitchenQR, requestItem,
             isScanning, stopScanner, cameraPermissionDenied, manualInput, submitManualInput,
-            hasTorch, isTorchOn, toggleTorch
+            hasTorch, isTorchOn, toggleTorch, currentFacingMode, switchCamera
         };
     }
 }).mount('#app');
