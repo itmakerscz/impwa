@@ -14,8 +14,8 @@ func generateQR(this js.Value, args []js.Value) interface{} {
 
 	// Using qrcode.Low (7% recovery) instead of Medium (15%) 
 	// results in a less dense grid, making complex WebRTC data 
-	// easier to scan. Size 256 is optimal for mobile browsers.
-	pngData, err := qrcode.Encode(dataString, qrcode.Low, 256)
+	// easier to scan. Size 512 provides better pixel clarity for dense data.
+	pngData, err := qrcode.Encode(dataString, qrcode.Low, 512)
 	if err != nil {
 		return js.ValueOf("Error generating QR: " + err.Error())
 	}

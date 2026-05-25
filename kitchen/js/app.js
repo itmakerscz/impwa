@@ -1,4 +1,4 @@
-import { createApp, ref } from 'vue';
+import { createApp, ref, nextTick } from 'vue';
 import { WebRTCManager } from './webrtc.js';
 
 let goWasmLoaded = false;
@@ -69,21 +69,37 @@ createApp({
         };
 
         const startScanner = async (onScanSuccess) => {
+            // 1. Security Check: Camera requires HTTPS or Localhost
+            if (!window.isSecureContext) {
+                const msg = "Camera access requires a secure connection (HTTPS).";
+                addLog(`Error: ${msg}`);
+                alert(msg);
+                return;
+            }
+
             isScanning.value = true;
             cameraPermissionDenied.value = false;
             activeScanCallback = onScanSuccess;
 
-            if (!html5QrCode) html5QrCode = new Html5Qrcode("qr-reader");
+            // 2. Wait for Vue to render the #qr-reader element
+            await nextTick();
+
+            // 3. Clean up existing instance to avoid "Scanner already running"
+            if (html5QrCode) {
+                try { await html5QrCode.stop(); } catch (e) { /* ignore */ }
+            }
+            
+            // Explicitly limit to QR_CODE to improve performance and accuracy
+            html5QrCode = new Html5Qrcode("qr-reader", { 
+                formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ] 
+            });
             
             try {
                 await html5QrCode.start(
-                    { 
-                        facingMode: "environment",
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    },
+                    { facingMode: "environment" },
                     { 
                         fps: 15,
+                        videoConstraints: { width: { ideal: 1280 }, height: { ideal: 720 } },
                         qrbox: (viewfinderWidth, viewfinderHeight) => {
                             const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
                             const size = Math.floor(minEdge * 0.7);
@@ -112,8 +128,10 @@ createApp({
                     }
                 }, 500);
             } catch (err) {
-                console.error("Scanner error:", err);
+                addLog(`Camera Error: ${err.message || err}`);
                 cameraPermissionDenied.value = true;
+                isScanning.value = false;
+                if (err.name === 'NotAllowedError') alert("Camera permission denied.");
             }
         };
 
