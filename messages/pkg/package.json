@@ -1,0 +1,15 @@
+{
+  "name": "wasm_webrtc_pwa",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "wasm_webrtc_pwa_bg.wasm",
+    "wasm_webrtc_pwa.js",
+    "wasm_webrtc_pwa.d.ts"
+  ],
+  "main": "wasm_webrtc_pwa.js",
+  "types": "wasm_webrtc_pwa.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
