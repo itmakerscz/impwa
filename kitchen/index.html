@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Restaurant Local Sync</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/><path d='M10 20v-6h4v6h5v-8h3L12 3l-7 9h3v8z'/></svg>">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="/css/style.css">
+    
+    <script type="importmap">
+      {
+        "imports": {
+          "vue": "https://unpkg.com/vue@3/dist/vue.esm-browser.js"
+        }
+      }
+    </script>
+</head>
+<body>
+    <div id="app" v-cloak>
+        <div v-if="!currentRole" class="role-selector">
+            <h2>Select Station</h2>
+            <button class="btn primary" @click="setRole('KITCHEN')">Kitchen (Hub)</button>
+            <button class="btn" @click="setRole('GRILL')">Grill Station</button>
+            <button class="btn" @click="setRole('PUB')">Pub Station</button>
+        </div>
+
+        <div v-else-if="currentRole === 'KITCHEN'" class="view-container">
+            <header><h2>Kitchen Hub</h2></header>
+            
+            <div class="network-controls">
+                <button class="btn" @click="generateSyncQR('GRILL')">Sync Grill</button>
+                <button class="btn" @click="generateSyncQR('PUB')">Sync Pub</button>
+                <button class="btn secondary" @click="scanStationAnswer()">Scan Station Reply</button>
+                <div id="qr-container" class="qr-box"></div>
+            </div>
+
+            <div class="ticket-board">
+                <h3>Active Orders</h3>
+                <div v-if="kitchenTickets.length === 0">No active requests.</div>
+                <div v-for="ticket in kitchenTickets" :key="ticket.id" class="ticket card">
+                    <strong>{{ ticket.station }}:</strong> {{ ticket.itemName }}
+                    <button class="btn small" @click="markAsDispatched(ticket)">Mark Dispatched</button>
+                </div>
+            </div>
+        </div>
+
+        <div v-else class="view-container">
+            <header><h2>{{ currentRole }} Station</h2></header>
+            
+            <div class="network-controls">
+                <button class="btn primary" @click="scanKitchenQR()">1. Scan Kitchen QR</button>
+                <div id="station-qr-container" class="qr-box"></div>
+                <p>2. Show reply QR to Kitchen</p>
+            </div>
+
+            <div class="inventory-grid">
+                <div v-for="item in inventory" :key="item.id" @click="requestItem(item)" class="card item-card">
+                    {{ item.name }}
+                </div>
+            </div>
+
+            <div class="my-requests">
+                <h3>My Requests</h3>
+                <ul>
+                    <li v-for="req in myRequests" :key="req.id">
+                        {{ req.itemName }} - 
+                        <span :class="req.status === 'Awaiting Kitchen' ? 'status-pending' : 'status-confirmed'">
+                            {{ req.status }}
+                        </span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/wasm_exec.js"></script>
+    <script type="module" src="/js/app.js"></script>
+    
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js');
+        }
+    </script>
+</body>
+</html>
