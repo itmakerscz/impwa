@@ -1,12 +1,12 @@
 const CACHE_NAME = 'rest-sync-v1';
 const ASSETS = [
     '/',
-    '/index.html',
-    '/css/style.css',
-    '/js/app.js',
-    '/js/webrtc.js',
-    '/js/wasm_exec.js',
-    '/wasm/qr_generator.wasm',
+    'index.html',
+    'css/style.css',
+    'js/app.js',
+    'js/webrtc.js',
+    'js/wasm_exec.js',
+    'wasm/qr_generator.wasm',
     'https://unpkg.com/vue@3/dist/vue.esm-browser.js'
 ];
 

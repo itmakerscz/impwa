@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Restaurant Local Sync</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/><path d='M10 20v-6h4v6h5v-8h3L12 3l-7 9h3v8z'/></svg>">
-    <link rel="manifest" href="/manifest.json">
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="css/style.css">
     
     <script type="importmap">
       {
@@ -74,12 +74,12 @@
         </div>
     </div>
 
-    <script src="/js/wasm_exec.js"></script>
-    <script type="module" src="/js/app.js"></script>
+    <script src="js/wasm_exec.js"></script>
+    <script type="module" src="js/app.js"></script>
     
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js');
+            navigator.serviceWorker.register('sw.js');
         }
     </script>
 </body>
