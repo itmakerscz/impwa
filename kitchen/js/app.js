@@ -12,6 +12,15 @@ WebAssembly.instantiateStreaming(fetch('wasm/qr_generator.wasm'), go.importObjec
 createApp({
     setup() {
         const currentRole = ref(null);
+
+        const debugLogs = ref([]);
+        
+        const addLog = (msg) => {
+            const timestamp = new Date().toLocaleTimeString();
+            debugLogs.value.unshift(`[${timestamp}] ${msg}`);
+            if (debugLogs.value.length > 50) debugLogs.value.pop();
+        };
+
         const kitchenTickets = ref([]);
         const myRequests = ref([]);
         const inventory = ref([
@@ -20,7 +29,10 @@ createApp({
             { id: 'item_3', name: 'Fries' }
         ]);
 
-        const network = new WebRTCManager((payload) => handleNetworkMessage(payload));
+        const network = new WebRTCManager(
+            (payload) => handleNetworkMessage(payload),
+            (msg) => addLog(msg)
+        );
         
         const isScanning = ref(false);
         const cameraPermissionDenied = ref(false);
@@ -161,7 +173,7 @@ createApp({
         };
 
         return {
-            currentRole, setRole, inventory, kitchenTickets, myRequests,
+            currentRole, setRole, inventory, kitchenTickets, myRequests, debugLogs,
             generateSyncQR, scanStationAnswer, markAsDispatched, scanKitchenQR, requestItem,
             isScanning, stopScanner, cameraPermissionDenied, manualInput, submitManualInput,
             hasTorch, isTorchOn, toggleTorch

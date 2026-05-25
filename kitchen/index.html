@@ -1,13 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Restaurant Local Sync</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/><path d='M10 20v-6h4v6h5v-8h3L12 3l-7 9h3v8z'/></svg>">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/><path d='M10 20v-6h4v6h5v-8h3L12 3l-7 9h3v8z'/></svg>">
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="css/style.css">
-    
+
     <script type="importmap">
       {
         "imports": {
@@ -16,12 +18,13 @@
       }
     </script>
 </head>
+
 <body>
     <div id="app" v-cloak>
         <!-- QR Scanner Overlay -->
         <div v-show="isScanning" class="scanner-overlay">
             <div v-show="!cameraPermissionDenied" id="qr-reader"></div>
-            
+
             <div v-if="hasTorch && !cameraPermissionDenied" class="scanner-controls">
                 <button class="btn torch-btn" @click="toggleTorch">
                     {{ isTorchOn ? '🔦 Turn Off' : '💡 Turn On Light' }}
@@ -45,8 +48,10 @@
         </div>
 
         <div v-else-if="currentRole === 'KITCHEN'" class="view-container">
-            <header><h2>Kitchen Hub</h2></header>
-            
+            <header>
+                <h2>Kitchen Hub</h2>
+            </header>
+
             <div class="network-controls">
                 <button class="btn" @click="generateSyncQR('GRILL')">Sync Grill</button>
                 <button class="btn" @click="generateSyncQR('PUB')">Sync Pub</button>
@@ -65,8 +70,10 @@
         </div>
 
         <div v-else class="view-container">
-            <header><h2>{{ currentRole }} Station</h2></header>
-            
+            <header>
+                <h2>{{ currentRole }} Station</h2>
+            </header>
+
             <div class="network-controls">
                 <button class="btn primary" @click="scanKitchenQR()">1. Scan Kitchen QR</button>
                 <div id="station-qr-container" class="qr-box"></div>
@@ -83,12 +90,19 @@
                 <h3>My Requests</h3>
                 <ul>
                     <li v-for="req in myRequests" :key="req.id">
-                        {{ req.itemName }} - 
+                        {{ req.itemName }} -
                         <span :class="req.status === 'Awaiting Kitchen' ? 'status-pending' : 'status-confirmed'">
                             {{ req.status }}
                         </span>
                     </li>
                 </ul>
+            </div>
+            <div class="debug-panel" v-if="debugLogs.length">
+                <h4>Debug Logs</h4>
+                <div
+                    style="max-height: 150px; overflow-y: auto; font-size: 10px; background: #000; color: #0f0; padding: 5px;">
+                    <div v-for="log in debugLogs">{{ log }}</div>
+                </div>
             </div>
         </div>
     </div>
@@ -96,11 +110,12 @@
     <script src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js"></script>
     <script src="js/wasm_exec.js"></script>
     <script type="module" src="js/app.js"></script>
-    
+
     <script>
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js');
         }
     </script>
 </body>
+
 </html>
