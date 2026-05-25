@@ -66,7 +66,8 @@
             <div v-if="currentSyncQR && stationStatus[pendingStationSync] !== 'connected'" class="sync-container card">
                 <p><strong>Action Required:</strong> Station must scan this QR</p>
                 <div id="kitchen-qr-container" class="qr-box"></div>
-                <p class="status-badge">Waiting for automatic handshake...</p>
+                <p>Then, scan the Station's Answer QR:</p>
+                <button class="btn primary" @click="scanStationAnswer">Scan Station Answer</button>
             </div>
 
             <div class="ticket-board">
@@ -87,6 +88,12 @@
                 <h2>{{ currentRole }}</h2>
                 <button class="btn small primary" @click="scanKitchenQR()">Sync to Kitchen</button>
             </header>
+
+            <!-- Station Answer QR for Serverless Sync -->
+            <div v-if="stationAnswerQR && stationStatus['Kitchen'] !== 'connected'" class="sync-container card">
+                <p><strong>Action Required:</strong> Show this to Kitchen Hub</p>
+                <div id="station-answer-qr-container" class="qr-box"></div>
+            </div>
 
             <div class="inventory-grid">
                 <div v-for="item in inventory" :key="item.id" @click="requestItem(item)" class="card item-card">

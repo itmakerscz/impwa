@@ -3,7 +3,10 @@ export class WebRTCManager {
         this.onMessage = onMessageCallback;
         this.onStatusChange = onStatusChange;
         this.log = (msg) => logger(`[WebRTC] ${msg}`);
-        this.spokes = { GRILL: { peer: null, channel: null }, PUB: { peer: null, channel: null } };
+        this.spokes = { 
+            GRILL: { peer: null, channel: null, pollAbort: null }, 
+            PUB: { peer: null, channel: null, pollAbort: null } 
+        };
         this.hub = { peer: null, channel: null };
         this.config = {
             iceServers: [
@@ -13,99 +16,25 @@ export class WebRTCManager {
                 { urls: 'stun:stun3.l.google.com:19302' }
             ]
         };
-        this.signalingServer = "https://ntfy.sh/";
-    }
-
-    async _compress(str) {
-        if (typeof CompressionStream === 'undefined') {
-            this.log("CompressionStream not supported, using Base64 fallback.");
-            // 'U' prefix for Uncompressed
-            return 'U' + btoa(unescape(encodeURIComponent(str)));
-        }
-        try {
-            const stream = new Blob([str]).stream().pipeThrough(new CompressionStream('deflate'));
-            const buffer = await new Response(stream).arrayBuffer();
-            let binary = "";
-            const bytes = new Uint8Array(buffer);
-            for (let i = 0; i < bytes.byteLength; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
-            // 'C' prefix for Compressed
-            return 'C' + btoa(binary);
-        } catch (err) {
-            this.log("Compression failed, falling back.");
-            return 'U' + btoa(unescape(encodeURIComponent(str)));
-        }
-    }
-
-    async _decompress(base64) {
-        const prefix = base64[0];
-        const payload = base64.slice(1);
-
-        if (prefix === 'U') {
-            return decodeURIComponent(escape(atob(payload)));
-        }
-
-        if (prefix === 'C' && typeof DecompressionStream !== 'undefined') {
-            const binary = atob(payload);
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-            const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'));
-            return await new Response(stream).text();
-        }
-
-        // If no prefix or unsupported compression, try raw decode as last resort
-        return decodeURIComponent(escape(atob(base64)));
+        this.signalingServer = null; // No server needed for Serverless mode
     }
 
     /**
-     * Strips non-essential lines from SDP to make QR codes smaller.
+     * Uses Go/Wasm to minimize and compress the SDP.
      */
     async _minimizeSDP(description) {
-        let sdp = description.sdp;
-
-        // 1. Aggressive line filtering: Remove non-essential media attributes
-        const filteredLines = sdp.split('\n')
-            .map(line => line.trim())
-            .filter(line => {
-                if (!line) return false;
-                const ignorePrefixes = [
-                    'a=extmap:', 'a=rtcp:', 'a=rtcp-fb:', 'a=msid:', 'a=ssrc:', 
-                    'a=group:', 'a=fmtp:', 'a=rtpmap:', 'a=msid-semantic:', 
-                    'a=ice-options:', 'a=bundle-only'
-                ];
-                return !ignorePrefixes.some(prefix => line.startsWith(prefix));
-            });
-
-        // 2. Candidate Pruning: Keep only 1 host (LAN) and 1 relay (TURN) candidate.
-        // This is the single most effective way to shrink SDP for QR codes.
-        let hostCount = 0;
-        let srflxCount = 0;
-        let relayCount = 0;
-        const finalLines = filteredLines.filter(line => {
-            if (line.startsWith('a=candidate:')) {
-                if (line.includes('typ host') && hostCount < 1) { hostCount++; return true; }
-                if (line.includes('typ srflx') && srflxCount < 1) { srflxCount++; return true; }
-                if (line.includes('typ relay') && relayCount < 1) { relayCount++; return true; }
-                return false; 
-            }
-            return true;
-        });
-
-        const minimizedSdp = finalLines.join('\n');
-        const typeChar = description.type === 'offer' ? 'o' : 'a';
-        
-        // 3. Use a flat format [type][sdp] instead of JSON to save structural bytes
-        return await this._compress(typeChar + minimizedSdp);
+        if (!window.wasmMinimizeSDP) return description.sdp;
+        return window.wasmMinimizeSDP(description.sdp, description.type);
     }
 
     /**
-     * Reconstructs a full RTCSessionDescription from the minimized version.
+     * Uses Go/Wasm to restore the SDP.
      */
     async _restoreSDP(compressedString) {
-        const decoded = await this._decompress(compressedString);
-        const typeChar = decoded[0];
-        const sdp = decoded.slice(1);
+        if (!window.wasmRestoreSDP) return JSON.parse(compressedString);
+        const raw = window.wasmRestoreSDP(compressedString);
+        const typeChar = raw[0];
+        const sdp = raw.slice(1);
 
         return {
             type: typeChar === 'o' ? 'offer' : 'answer',
@@ -137,15 +66,14 @@ export class WebRTCManager {
     }
 
     async _signalPost(topic, data) {
-        try {
-            await fetch(`${this.signalingServer}${topic}`, {
-                method: 'POST',
-                body: JSON.stringify(data)
-            });
-            this.log(`Signaling: Posted answer to ${topic}`);
-        } catch (err) {
-            this.log(`Signaling Error: ${err.message}`);
+        const res = await fetch(`${this.signalingServer}${topic}`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+        if (!res.ok) {
+            throw new Error(`Signaling Post failed with status ${res.status}`);
         }
+        this.log(`Signaling: Posted answer to ${topic}`);
     }
 
     /**
@@ -185,6 +113,7 @@ export class WebRTCManager {
             if (['failed', 'disconnected', 'closed'].includes(peer.connectionState)) {
                 this.log(`${name} connection lost. Cleaning up...`);
                 // Clear references so a new connection can be established
+                if (this.spokes[name] && this.spokes[name].pollAbort) this.spokes[name].pollAbort.abort();
                 if (this.hub.peer === peer) this.hub = { peer: null, channel: null };
                 for (const station in this.spokes) {
                     if (this.spokes[station].peer === peer) {
@@ -309,41 +238,70 @@ export class WebRTCManager {
         this.log("Offer ready for scanning.");
         const minimized = await this._minimizeSDP(peer.localDescription);
         
-        // Start polling for the answer immediately
-        this._pollForAnswer(stationName, signalingTopic);
-
-        // The QR now contains both the SDP and the signaling topic
-        return JSON.stringify({ s: minimized, t: signalingTopic });
+        // The QR now only contains the minimized SDP
+        return minimized;
     }
 
     async _pollForAnswer(stationName, topic) {
-        this.log(`Polling for answer on topic: ${topic}...`);
-        try {
-            const res = await fetch(`${this.signalingServer}${topic}/json?poll=1`);
-            const messages = await res.json();
-            
-            if (messages && Array.isArray(messages) && messages.length > 0) {
-                const lastMsgText = messages[messages.length - 1].message;
-                try {
-                    const lastMsg = JSON.parse(lastMsgText);
-                    if (lastMsg.answer) {
-                        await this.hubAcceptAnswer(stationName, lastMsg.answer);
-                        return; // Successfully linked
-                    }
-                } catch (e) {
-                    this.log("Malformed answer received, continuing poll...");
-                }
+        const spoke = this.spokes[stationName];
+        
+        // Cancel any existing poll for this station to prevent duplicate loops
+        if (spoke.pollAbort) spoke.pollAbort.abort();
+        spoke.pollAbort = new AbortController();
+        const signal = spoke.pollAbort.signal;
+
+        this.log(`Starting answer poll for ${stationName} on topic ${topic}...`);
+        
+        const startTime = Date.now();
+        const maxDuration = 120000; // 2 minute maximum wait for a scan
+
+        while (!signal.aborted) {
+            const peer = spoke.peer;
+            // Exit if peer is gone or already connected
+            if (!peer || ['connected', 'failed', 'closed'].includes(peer.connectionState)) break;
+
+            if (Date.now() - startTime > maxDuration) {
+                this.log(`Polling timeout for ${stationName}. QR scan likely failed.`);
+                if (this.onStatusChange) this.onStatusChange(stationName, 'failed');
+                break;
             }
 
-            // Keep polling as long as the peer exists and isn't connected or failed
-            const peer = this.spokes[stationName].peer;
-            if (peer && !['connected', 'failed', 'closed'].includes(peer.connectionState)) {
-                setTimeout(() => this._pollForAnswer(stationName, topic), 2000);
+            try {
+                const res = await fetch(`${this.signalingServer}${topic}/json?poll=1`, { signal });
+                
+                if (res.status === 429) {
+                    this.log("Rate limited by signaling server. Backing off 10 seconds...");
+                    await new Promise(resolve => setTimeout(resolve, 10000));
+                    continue;
+                }
+
+                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                const messages = await res.json();
+                
+                if (messages && Array.isArray(messages) && messages.length > 0) {
+                    const lastMsgText = messages[messages.length - 1].message;
+                    try {
+                        const lastMsg = JSON.parse(lastMsgText);
+                        if (lastMsg.answer) {
+                            await this.hubAcceptAnswer(stationName, lastMsg.answer);
+                            break; // Success!
+                        }
+                    } catch (e) {
+                        this.log("Malformed signaling message, skipping...");
+                    }
+                }
+            } catch (err) {
+                if (err.name === 'AbortError') break;
+                this.log(`Signaling poll error: ${err.message}`);
+                // On network error, wait slightly longer before retrying
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                continue;
             }
-        } catch (err) { 
-            this.log(`Poll failed: ${err.message}. Retrying...`);
-            setTimeout(() => this._pollForAnswer(stationName, topic), 3000);
+
+            // Standard interval wait before next poll attempt
+            await new Promise(resolve => setTimeout(resolve, 3000));
         }
+        this.log(`Polling loop ended for ${stationName}`);
     }
 
     async hubAcceptAnswer(stationName, answerString) {
@@ -365,47 +323,21 @@ export class WebRTCManager {
         const peer = new RTCPeerConnection(this.config);
         this._setupPeerListeners(peer, "Kitchen");
         this.hub.peer = peer;
-        
+
         peer.ondatachannel = (e) => {
             this.log("Received data channel from kitchen");
             this.hub.channel = this._setupChannel(e.channel, "Kitchen");
             this.hub.channel.onmessage = (ev) => this.onMessage(JSON.parse(ev.data));
         };
 
-        const offer = await this._restoreSDP(data.s);
-        
-        // Analyze the incoming offer's network info
-        const remoteInfo = this._extractConnectivityInfo(offer.sdp);
-        this.log(`Kitchen reported local IPs: ${remoteInfo.ips.join(', ')}`);
-
+        const offer = await this._restoreSDP(qrPayload);
         await peer.setRemoteDescription(offer);
         
         const answer = await peer.createAnswer();
         await peer.setLocalDescription(answer);
-        
-        this.log("Waiting for ICE candidates...");
         await this._waitForICE(peer);
-        
-        const answerMinimized = await this._minimizeSDP(peer.localDescription);
-        
-        // Automatically send the answer back via signaling relay
-        let sent = false;
-        for (let i = 0; i < 3; i++) {
-            try {
-                await this._signalPost(data.t, { answer: answerMinimized });
-                this.log("Answer sent back to kitchen automatically.");
-                sent = true;
-                break;
-            } catch (e) {
-                this.log(`Signaling attempt ${i+1} failed, retrying...`);
-                await new Promise(r => setTimeout(r, 1000));
-            }
-        }
-        if (!sent) {
-            this.log("Critical: Could not send answer back to hub.");
-        } else {
-            this._startWatchdog(peer, "Kitchen");
-        }
+
+        return await this._minimizeSDP(peer.localDescription);
     }
 
     sendToKitchen(payload) {

@@ -232,13 +232,31 @@ createApp({
             kitchenTickets.value = kitchenTickets.value.filter(t => t.id !== ticket.id);
             network.sendToStation(ticket.station, { id: ticket.id, type: 'STATUS_UPDATE', newStatus: 'Dispatched!' });
         };
+        
+        const scanStationAnswer = () => {
+            if (!pendingStationSync) return;
+            startScanner(async (answerStr) => {
+                if (answerStr) {
+                    await network.hubAcceptAnswer(pendingStationSync, answerStr);
+                    addLog(`Answer received for ${pendingStationSync}. Connecting...`);
+                }
+            });
+        };
 
         // --- Station Methods ---
+        const stationAnswerQR = ref(null);
+
         const scanKitchenQR = () => {
             startScanner(async (offerStr) => {
                 if (offerStr) {
-                    await network.handleOfferAndCreateAnswer(offerStr);
-                    addLog("Handshake sent! Waiting for connection...");
+                    const answerStr = await network.handleOfferAndCreateAnswer(offerStr);
+                    stationAnswerQR.value = answerStr;
+                    addLog("Answer generated! Show this QR to the Kitchen Hub.");
+                    
+                    // Render the answer QR for the Hub to scan back
+                    nextTick(() => {
+                        renderQR(answerStr, 'station-answer-qr-container');
+                    });
                 }
             });
         };
@@ -260,9 +278,9 @@ createApp({
 
         return {
             currentRole, setRole, inventory, kitchenTickets, myRequests, debugLogs, currentSyncQR, stationStatus,
-            generateSyncQR, markAsDispatched, scanKitchenQR, requestItem,
+            generateSyncQR, markAsDispatched, scanKitchenQR, requestItem, scanStationAnswer,
             isScanning, stopScanner, cameraPermissionDenied, manualInput, submitManualInput,
-            hasTorch, isTorchOn, toggleTorch, currentFacingMode, switchCamera
+            hasTorch, isTorchOn, toggleTorch, currentFacingMode, switchCamera, stationAnswerQR
         };
     }
 }).mount('#app');
