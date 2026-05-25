@@ -98,7 +98,7 @@ createApp({
                     { facingMode: "environment" },
                     { 
                         fps: 15,
-                        videoConstraints: { width: { ideal: 1280 }, height: { ideal: 720 } },
+                        videoConstraints: { width: { ideal: 720 }, height: { ideal: 720 } },
                         qrbox: (viewfinderWidth, viewfinderHeight) => {
                             const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
                             const size = Math.floor(minEdge * 0.7);
