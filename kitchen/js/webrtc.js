@@ -128,12 +128,12 @@ export class WebRTCManager {
                 }
             };
             peer.addEventListener('icegatheringstatechange', check);
-            // Fallback: resolve after 4 seconds to ensure we have at least some candidates
+            // Fallback: resolve after 6 seconds to ensure we have at least some candidates
             setTimeout(() => {
                 peer.removeEventListener('icegatheringstatechange', check);
                 this.log("ICE gathering timeout (proceeding with available candidates)");
                 resolve();
-            }, 4000);
+            }, 6000);
         });
     }
 
@@ -199,21 +199,24 @@ export class WebRTCManager {
             }
         };
         peer.oniceconnectionstatechange = () => this.log(`${name} ICE State: ${peer.iceConnectionState}`);
+    }
 
-        // Connection Watchdog: If not connected within 20s, allow retry by cleaning up.
+    _startWatchdog(peer, name, timeoutMs = 30000) {
+        if (peer._connTimer) clearTimeout(peer._connTimer);
+        
         peer._connTimer = setTimeout(() => {
             if (peer.connectionState !== 'connected') {
-                this.log(`Timeout: ${name} failed to connect in 20s. Cleaning up...`);
+                this.log(`Timeout: ${name} failed to connect in ${timeoutMs/1000}s. Cleaning up...`);
                 peer.close();
-                // Reset internal state references so the app doesn't try to use a dead peer
                 if (this.hub.peer === peer) this.hub = { peer: null, channel: null };
                 for (const station in this.spokes) {
                     if (this.spokes[station].peer === peer) {
                         this.spokes[station] = { peer: null, channel: null };
                     }
                 }
+                if (this.onStatusChange) this.onStatusChange(name, 'failed');
             }
-        }, 20000);
+        }, timeoutMs);
     }
 
     _setupChannel(channel, name) {
@@ -266,23 +269,36 @@ export class WebRTCManager {
         try {
             const res = await fetch(`${this.signalingServer}${topic}/json?poll=1`);
             const messages = await res.json();
-            if (messages && messages.length > 0) {
-                // ntfy.sh returns an array or single object depending on format; usually we want the last body
-                const lastMsg = JSON.parse(messages[messages.length - 1].message);
-                await this.hubAcceptAnswer(stationName, lastMsg.answer);
-            } else {
-                // Retry once after a short delay if nothing found and connection not yet open
-                if (this.spokes[stationName].peer?.connectionState !== 'connected') {
-                    setTimeout(() => this._pollForAnswer(stationName, topic), 2000);
+            
+            if (messages && Array.isArray(messages) && messages.length > 0) {
+                const lastMsgText = messages[messages.length - 1].message;
+                try {
+                    const lastMsg = JSON.parse(lastMsgText);
+                    if (lastMsg.answer) {
+                        await this.hubAcceptAnswer(stationName, lastMsg.answer);
+                        return; // Successfully linked
+                    }
+                } catch (e) {
+                    this.log("Malformed answer received, continuing poll...");
                 }
             }
-        } catch (err) { this.log(`Poll failed: ${err.message}`); }
+
+            // Keep polling as long as the peer exists and isn't connected or failed
+            const peer = this.spokes[stationName].peer;
+            if (peer && !['connected', 'failed', 'closed'].includes(peer.connectionState)) {
+                setTimeout(() => this._pollForAnswer(stationName, topic), 2000);
+            }
+        } catch (err) { 
+            this.log(`Poll failed: ${err.message}. Retrying...`);
+            setTimeout(() => this._pollForAnswer(stationName, topic), 3000);
+        }
     }
 
     async hubAcceptAnswer(stationName, answerString) {
         const answer = await this._restoreSDP(answerString);
         await this.spokes[stationName].peer.setRemoteDescription(answer);
         this.log(`Remote description set for ${stationName}. Connecting...`);
+        this._startWatchdog(this.spokes[stationName].peer, stationName);
     }
 
     sendToStation(stationName, payload) {
@@ -321,8 +337,23 @@ export class WebRTCManager {
         const answerMinimized = await this._minimizeSDP(peer.localDescription);
         
         // Automatically send the answer back via signaling relay
-        await this._signalPost(data.t, { answer: answerMinimized });
-        this.log("Answer sent back to kitchen automatically.");
+        let sent = false;
+        for (let i = 0; i < 3; i++) {
+            try {
+                await this._signalPost(data.t, { answer: answerMinimized });
+                this.log("Answer sent back to kitchen automatically.");
+                sent = true;
+                break;
+            } catch (e) {
+                this.log(`Signaling attempt ${i+1} failed, retrying...`);
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        }
+        if (!sent) {
+            this.log("Critical: Could not send answer back to hub.");
+        } else {
+            this._startWatchdog(peer, "HubLink");
+        }
     }
 
     sendToKitchen(payload) {
