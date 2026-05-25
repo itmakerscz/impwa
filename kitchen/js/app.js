@@ -3,7 +3,7 @@ import { WebRTCManager } from './webrtc.js';
 
 let goWasmLoaded = false;
 const go = new Go();
-WebAssembly.instantiateStreaming(fetch('/wasm/qr_generator.wasm'), go.importObject)
+WebAssembly.instantiateStreaming(fetch('wasm/qr_generator.wasm'), go.importObject)
     .then((result) => {
         go.run(result.instance);
         goWasmLoaded = true;
