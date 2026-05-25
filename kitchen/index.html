@@ -11,13 +11,32 @@
     <script type="importmap">
       {
         "imports": {
-          "vue": "https://unpkg.com/vue@3/dist/vue.esm-browser.js"
+          "vue": "https://unpkg.com/vue@3/dist/vue.esm-browser.prod.js"
         }
       }
     </script>
 </head>
 <body>
     <div id="app" v-cloak>
+        <!-- QR Scanner Overlay -->
+        <div v-show="isScanning" class="scanner-overlay">
+            <div v-show="!cameraPermissionDenied" id="qr-reader"></div>
+            
+            <div v-if="hasTorch && !cameraPermissionDenied" class="scanner-controls">
+                <button class="btn torch-btn" @click="toggleTorch">
+                    {{ isTorchOn ? '🔦 Turn Off' : '💡 Turn On Light' }}
+                </button>
+            </div>
+
+            <div v-show="cameraPermissionDenied" class="fallback-input card">
+                <h3>Manual Connection</h3>
+                <p>Camera access denied. Please paste the connection string below:</p>
+                <textarea v-model="manualInput" placeholder="Paste code here..."></textarea>
+                <button class="btn primary" @click="submitManualInput">Connect</button>
+            </div>
+            <button class="btn secondary close-scanner" @click="stopScanner">Close</button>
+        </div>
+
         <div v-if="!currentRole" class="role-selector">
             <h2>Select Station</h2>
             <button class="btn primary" @click="setRole('KITCHEN')">Kitchen (Hub)</button>
@@ -74,6 +93,7 @@
         </div>
     </div>
 
+    <script src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js"></script>
     <script src="js/wasm_exec.js"></script>
     <script type="module" src="js/app.js"></script>
     
