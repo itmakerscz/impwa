@@ -125,10 +125,17 @@ createApp({
 
         const handleNetworkMessage = (payload) => {
             if (currentRole.value === 'KITCHEN' && payload.type === 'RESTOCK_REQUEST') {
+                // Check if already exists to prevent duplicates
+                if (kitchenTickets.value.some(t => t.id === payload.id)) return;
                 kitchenTickets.value.push(payload);
+                addLog(`New request: ${payload.itemName} from ${payload.station}`);
             } else if (currentRole.value !== 'KITCHEN' && payload.type === 'STATUS_UPDATE') {
                 const req = myRequests.value.find(r => r.id === payload.id);
-                if (req) req.status = payload.newStatus;
+                if (req) {
+                    req.status = payload.newStatus;
+                    req.completed = payload.newStatus === 'Dispatched!';
+                    addLog(`Order Update: ${payload.newStatus}`);
+                }
             }
         };
 
@@ -151,16 +158,6 @@ createApp({
             setTimeout(() => renderQR(offerStr, 'kitchen-qr-container'), 100);
         };
 
-        const scanStationReply = () => {
-            startScanner(async (answerStr) => {
-                if (answerStr && pendingStationSync) {
-                    await network.hubAcceptAnswer(pendingStationSync, answerStr);
-                    addLog(`${pendingStationSync} connection completed.`);
-                    currentSyncQR.value = null; // Hide the QR and button after success
-                }
-            });
-        };
-
         const markAsDispatched = (ticket) => {
             kitchenTickets.value = kitchenTickets.value.filter(t => t.id !== ticket.id);
             network.sendToStation(ticket.station, { id: ticket.id, type: 'STATUS_UPDATE', newStatus: 'Dispatched!' });
@@ -170,8 +167,8 @@ createApp({
         const scanKitchenQR = () => {
             startScanner(async (offerStr) => {
                 if (offerStr) {
-                    const answerStr = await network.handleOfferAndCreateAnswer(offerStr);
-                    renderQR(answerStr, 'station-qr-container');
+                    await network.handleOfferAndCreateAnswer(offerStr);
+                    addLog("Handshake sent! Waiting for connection...");
                 }
             });
         };
@@ -184,15 +181,16 @@ createApp({
                 itemId: item.id,
                 itemName: item.name,
                 status: 'Awaiting Kitchen',
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                completed: false
             };
-            myRequests.value.push(req);
+            myRequests.value.unshift(req);
             network.sendToKitchen(req);
         };
 
         return {
             currentRole, setRole, inventory, kitchenTickets, myRequests, debugLogs, currentSyncQR, stationStatus,
-            generateSyncQR, markAsDispatched, scanKitchenQR, requestItem, scanStationReply,
+            generateSyncQR, markAsDispatched, scanKitchenQR, requestItem,
             isScanning, stopScanner, cameraPermissionDenied, manualInput, submitManualInput,
             hasTorch, isTorchOn, toggleTorch
         };

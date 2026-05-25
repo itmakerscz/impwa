@@ -50,46 +50,43 @@
         <div v-else-if="currentRole === 'KITCHEN'" class="view-container">
             <header>
                 <h2>Kitchen Hub</h2>
+                <div class="network-controls">
+                    <div v-for="name in ['GRILL', 'PUB']" :key="name" class="station-status-item">
+                        <span v-if="stationStatus[name] === 'connected'" class="status-badge">
+                            <span class="status-dot online"></span> {{ name }}
+                        </span>
+                        <button v-else class="btn small primary" @click="generateSyncQR(name)">
+                            Sync {{ name }}
+                        </button>
+                    </div>
+                </div>
             </header>
 
-            <div class="network-controls">
-                <div v-for="name in ['GRILL', 'PUB']" :key="name" class="station-status-item">
-                    <span v-if="stationStatus[name] === 'connected'" class="status-badge connected">
-                        ✅ {{ name }} Connected
-                    </span>
-                    <button v-else class="btn" @click="generateSyncQR(name)">
-                        Sync {{ name }}
-                    </button>
-                </div>
-
-                <!-- Connection QR displayed directly in the Hub view -->
-                <div v-if="currentSyncQR" class="sync-container card">
-                    <p><strong>Step 1:</strong> Station scans this</p>
-                    <div id="kitchen-qr-container" class="qr-box"></div>
-                    <button class="btn primary" @click="scanStationReply">Step 2: Scan Station Reply</button>
-                </div>
+            <!-- Connection QR displayed directly in the Hub view -->
+            <div v-if="currentSyncQR && stationStatus[pendingStationSync] !== 'connected'" class="sync-container card">
+                <p><strong>Action Required:</strong> Station must scan this QR</p>
+                <div id="kitchen-qr-container" class="qr-box"></div>
+                <p class="status-badge">Waiting for automatic handshake...</p>
             </div>
 
             <div class="ticket-board">
-                <h3>Active Orders</h3>
-                <div v-if="kitchenTickets.length === 0">No active requests.</div>
-                <div v-for="ticket in kitchenTickets" :key="ticket.id" class="ticket card">
-                    <strong>{{ ticket.station }}:</strong> {{ ticket.itemName }}
+                <h3>Live Orders</h3>
+                <div v-if="kitchenTickets.length === 0" class="card" style="text-align: center; color: var(--secondary);">No active requests</div>
+                <div v-for="ticket in kitchenTickets" :key="ticket.id" class="ticket card new">
+                    <div>
+                        <div class="status-badge">{{ ticket.station }}</div>
+                        <div style="font-size: 1.1rem; font-weight: 600; margin-top: 4px;">{{ ticket.itemName }}</div>
+                    </div>
                     <button class="btn small" @click="markAsDispatched(ticket)">Mark Dispatched</button>
                 </div>
             </div>
         </div>
 
         <div v-else class="view-container">
-            <header>
-                <h2>{{ currentRole }} Station</h2>
+            <header class="header">
+                <h2>{{ currentRole }}</h2>
+                <button class="btn small primary" @click="scanKitchenQR()">Sync to Kitchen</button>
             </header>
-
-            <div class="network-controls">
-                <button class="btn primary" @click="scanKitchenQR()">1. Scan Kitchen QR</button>
-                <div id="station-qr-container" class="qr-box"></div>
-                <p>2. Show reply QR to Kitchen</p>
-            </div>
 
             <div class="inventory-grid">
                 <div v-for="item in inventory" :key="item.id" @click="requestItem(item)" class="card item-card">

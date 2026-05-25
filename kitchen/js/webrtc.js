@@ -16,6 +16,7 @@ export class WebRTCManager {
                 }
             ]
         };
+        this.signalingServer = "https://ntfy.sh/";
     }
 
     async _compress(str) {
@@ -121,6 +122,18 @@ export class WebRTCManager {
         });
     }
 
+    async _signalPost(topic, data) {
+        try {
+            await fetch(`${this.signalingServer}${topic}`, {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+            this.log(`Signaling: Posted answer to ${topic}`);
+        } catch (err) {
+            this.log(`Signaling Error: ${err.message}`);
+        }
+    }
+
     /**
      * Extracts local IP addresses from an SDP string to check for local network presence.
      */
@@ -198,13 +211,14 @@ export class WebRTCManager {
     // --- KITCHEN HUB ---
     async createOfferForStation(stationName) {
         this.log(`Creating offer for ${stationName}...`);
+        const signalingTopic = `rest-sync-${crypto.randomUUID().slice(0, 8)}`;
         const peer = new RTCPeerConnection(this.config);
         this._setupPeerListeners(peer, stationName);
         
         this.spokes[stationName].peer = peer;
         const channel = peer.createDataChannel(`${stationName}-channel`);
         this.spokes[stationName].channel = this._setupChannel(channel, stationName);
-        
+
         channel.onmessage = (e) => this.onMessage(JSON.parse(e.data));
         
         const offer = await peer.createOffer();
@@ -223,7 +237,31 @@ export class WebRTCManager {
         }
 
         this.log("Offer ready for scanning.");
-        return await this._minimizeSDP(peer.localDescription);
+        const minimized = await this._minimizeSDP(peer.localDescription);
+        
+        // Start polling for the answer immediately
+        this._pollForAnswer(stationName, signalingTopic);
+
+        // The QR now contains both the SDP and the signaling topic
+        return JSON.stringify({ s: minimized, t: signalingTopic });
+    }
+
+    async _pollForAnswer(stationName, topic) {
+        this.log(`Polling for answer on topic: ${topic}...`);
+        try {
+            const res = await fetch(`${this.signalingServer}${topic}/json?poll=1`);
+            const messages = await res.json();
+            if (messages && messages.length > 0) {
+                // ntfy.sh returns an array or single object depending on format; usually we want the last body
+                const lastMsg = JSON.parse(messages[messages.length - 1].message);
+                await this.hubAcceptAnswer(stationName, lastMsg.answer);
+            } else {
+                // Retry once after a short delay if nothing found and connection not yet open
+                if (this.spokes[stationName].peer?.connectionState !== 'connected') {
+                    setTimeout(() => this._pollForAnswer(stationName, topic), 2000);
+                }
+            }
+        } catch (err) { this.log(`Poll failed: ${err.message}`); }
     }
 
     async hubAcceptAnswer(stationName, answerString) {
@@ -238,19 +276,20 @@ export class WebRTCManager {
     }
 
     // --- STATIONS (SPOKES) ---
-    async handleOfferAndCreateAnswer(offerString) {
+    async handleOfferAndCreateAnswer(qrPayload) {
         this.log("Handling offer from kitchen...");
+        const data = JSON.parse(qrPayload);
         const peer = new RTCPeerConnection(this.config);
         this._setupPeerListeners(peer, "HubLink");
         this.hub.peer = peer;
-
+        
         peer.ondatachannel = (e) => {
             this.log("Received data channel from hub");
             this.hub.channel = this._setupChannel(e.channel, "HubLink");
             this.hub.channel.onmessage = (ev) => this.onMessage(JSON.parse(ev.data));
         };
 
-        const offer = await this._restoreSDP(offerString);
+        const offer = await this._restoreSDP(data.s);
         
         // Analyze the incoming offer's network info
         const remoteInfo = this._extractConnectivityInfo(offer.sdp);
@@ -263,8 +302,12 @@ export class WebRTCManager {
         
         this.log("Waiting for ICE candidates...");
         await this._waitForICE(peer);
-        this.log("Answer ready for scanning.");
-        return await this._minimizeSDP(peer.localDescription);
+        
+        const answerMinimized = await this._minimizeSDP(peer.localDescription);
+        
+        // Automatically send the answer back via signaling relay
+        await this._signalPost(data.t, { answer: answerMinimized });
+        this.log("Answer sent back to kitchen automatically.");
     }
 
     sendToKitchen(payload) {
