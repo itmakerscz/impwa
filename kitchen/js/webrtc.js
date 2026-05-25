@@ -8,12 +8,9 @@ export class WebRTCManager {
         this.config = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                {
-                    // Free TURN server provided by Open Relay Project
-                    urls: "turn:openrelay.metered.ca:443",
-                    username: "openrelayproject",
-                    credential: "openrelayproject",
-                }
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' }
             ]
         };
         this.signalingServer = "https://ntfy.sh/";
@@ -83,10 +80,12 @@ export class WebRTCManager {
         // 2. Candidate Pruning: Keep only 1 host (LAN) and 1 relay (TURN) candidate.
         // This is the single most effective way to shrink SDP for QR codes.
         let hostCount = 0;
+        let srflxCount = 0;
         let relayCount = 0;
         const finalLines = filteredLines.filter(line => {
             if (line.startsWith('a=candidate:')) {
                 if (line.includes('typ host') && hostCount < 1) { hostCount++; return true; }
+                if (line.includes('typ srflx') && srflxCount < 1) { srflxCount++; return true; }
                 if (line.includes('typ relay') && relayCount < 1) { relayCount++; return true; }
                 return false; 
             }
@@ -157,7 +156,8 @@ export class WebRTCManager {
         const info = {
             ips: [],
             hasHost: false,
-            hasRelay: false
+            hasRelay: false,
+            hasSrflx: false
         };
 
         lines.forEach(line => {
@@ -168,6 +168,7 @@ export class WebRTCManager {
                 
                 if (type === 'host' && !info.ips.includes(ip)) info.ips.push(ip);
                 if (type === 'host') info.hasHost = true;
+                if (type === 'srflx') info.hasSrflx = true;
                 if (type === 'relay') info.hasRelay = true;
             }
         });
@@ -219,6 +220,56 @@ export class WebRTCManager {
         }, timeoutMs);
     }
 
+    /**
+     * Diagnoses the NAT type by comparing candidates from multiple STUN servers.
+     * Symmetric NATs return different public ports for the same local port.
+     */
+    async detectNATType() {
+        return new Promise((resolve) => {
+            const pc = new RTCPeerConnection(this.config);
+            const srflxCandidates = [];
+            
+            const timer = setTimeout(() => {
+                cleanup();
+                resolve("NAT Check Timeout (STUN unreachable)");
+            }, 6000);
+
+            const cleanup = () => {
+                clearTimeout(timer);
+                pc.close();
+            };
+
+            pc.onicecandidate = (e) => {
+                if (e.candidate && e.candidate.type === 'srflx') {
+                    srflxCandidates.push({
+                        port: e.candidate.port,
+                        relatedPort: e.candidate.relatedPort
+                    });
+                } else if (!e.candidate) {
+                    cleanup();
+                    if (srflxCandidates.length === 0) return resolve("NAT Type: Local Only (No STUN candidates)");
+                    
+                    // Group public ports by the local port they originated from
+                    const portsByLocalPort = {};
+                    srflxCandidates.forEach(c => {
+                        if (!portsByLocalPort[c.relatedPort]) portsByLocalPort[c.relatedPort] = new Set();
+                        portsByLocalPort[c.relatedPort].add(c.port);
+                    });
+
+                    for (const localPort in portsByLocalPort) {
+                        if (portsByLocalPort[localPort].size > 1) {
+                            return resolve("Symmetric NAT (STUN will fail)");
+                        }
+                    }
+                    resolve("Cone NAT (STUN should work)");
+                }
+            };
+
+            pc.createDataChannel('nat-test');
+            pc.createOffer().then(o => pc.setLocalDescription(o));
+        });
+    }
+
     _setupChannel(channel, name) {
         channel.onopen = () => this.log(`Channel ${name} is OPEN`);
         channel.onclose = () => this.log(`Channel ${name} is CLOSED`);
@@ -250,8 +301,9 @@ export class WebRTCManager {
         
         if (!info.hasHost) {
             this.log("Warning: No local (host) candidates found. LAN connection may fail.");
-        } else if (!info.hasRelay) {
-            this.log("Notice: No Relay (TURN) candidates. This requires a direct local path.");
+        } 
+        if (!info.hasSrflx && !info.hasRelay) {
+            this.log("Notice: No public (STUN/TURN) candidates. Connection across different networks will fail.");
         }
 
         this.log("Offer ready for scanning.");
@@ -311,12 +363,12 @@ export class WebRTCManager {
         this.log("Handling offer from kitchen...");
         const data = JSON.parse(qrPayload);
         const peer = new RTCPeerConnection(this.config);
-        this._setupPeerListeners(peer, "HubLink");
+        this._setupPeerListeners(peer, "Kitchen");
         this.hub.peer = peer;
         
         peer.ondatachannel = (e) => {
-            this.log("Received data channel from hub");
-            this.hub.channel = this._setupChannel(e.channel, "HubLink");
+            this.log("Received data channel from kitchen");
+            this.hub.channel = this._setupChannel(e.channel, "Kitchen");
             this.hub.channel.onmessage = (ev) => this.onMessage(JSON.parse(ev.data));
         };
 
@@ -352,7 +404,7 @@ export class WebRTCManager {
         if (!sent) {
             this.log("Critical: Could not send answer back to hub.");
         } else {
-            this._startWatchdog(peer, "HubLink");
+            this._startWatchdog(peer, "Kitchen");
         }
     }
 

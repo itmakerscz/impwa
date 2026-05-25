@@ -45,6 +45,12 @@ createApp({
             }
         );
         
+        // Run NAT diagnostic on startup
+        network.detectNATType().then(type => {
+            addLog(`NAT Diagnostic: ${type}`);
+            if (type.includes('Symmetric')) addLog("Tip: You likely need a TURN server for this network.");
+        });
+
         const isScanning = ref(false);
         const cameraPermissionDenied = ref(false);
         const hasTorch = ref(false);
