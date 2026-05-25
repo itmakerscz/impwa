@@ -21,24 +21,20 @@ body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--t
 .item-card:active { transform: scale(0.95); }
 .network-controls { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem; }
 .qr-box { 
-    margin-top: 1.5rem; 
-    text-align: center; 
-    min-height: 340px; 
+    background: #fff;
+    padding: 1.5rem;
     display: flex;
     justify-content: center;
     align-items: center;
+    min-height: 340px;
 }
 .qr-box img { 
-    width: 480px;
-    max-width: 85vw;
+    width: 100%;
     height: auto;
+    display: block;
     aspect-ratio: 1 / 1;
     image-rendering: pixelated;
     image-rendering: crisp-edges;
-    border: 16px solid white;
-    background: white;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
-    border-radius: 4px;
 }
 .ticket { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
 .status-pending { color: #d97706; font-weight: 600; }
@@ -71,3 +67,50 @@ body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--t
     width: 100%; min-height: 120px; padding: 10px; border: 1px solid #cbd5e1; 
     border-radius: var(--radius); font-family: monospace; box-sizing: border-box;
 }
+.sync-container { 
+    margin-top: 20px; 
+    text-align: center; 
+}
+.sync-container .btn { margin-top: 10px; }
+.debug-panel {
+    margin-top: 2.5rem;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 1.5rem;
+}
+.debug-panel h4 {
+    margin: 0 0 0.75rem 0;
+    font-size: 0.75rem;
+    color: var(--secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+.debug-logs-container { 
+    max-height: 200px; 
+    overflow-y: auto; 
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 11px; 
+    background: #1e1e1e; 
+    color: #d4d4d4; 
+    padding: 12px; 
+    border-radius: var(--radius);
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+    line-height: 1.6;
+}
+.debug-logs-container div {
+    border-bottom: 1px solid #2d2d2d;
+    padding: 4px 0;
+}
+.debug-logs-container div:last-child { border-bottom: none; }
+
+/* Modern Scrollbar Styling */
+.debug-logs-container::-webkit-scrollbar { width: 8px; }
+.debug-logs-container::-webkit-scrollbar-track { 
+    background: #2d2d2d; 
+    border-radius: 0 var(--radius) var(--radius) 0; 
+}
+.debug-logs-container::-webkit-scrollbar-thumb { 
+    background: #4a4a4a; 
+    border-radius: 10px; 
+    border: 2px solid #2d2d2d; 
+}
+.debug-logs-container::-webkit-scrollbar-thumb:hover { background: #5a5a5a; }

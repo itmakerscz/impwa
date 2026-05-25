@@ -17,23 +17,6 @@
         }
       }
     </script>
-    <style>
-        .qr-box {
-            background: #fff;
-            padding: 1.5rem;
-            display: flex;
-            justify-content: center;
-            margin: 1.5rem auto;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        .qr-box img {
-            width: 100%;
-            max-width: 350px;
-            height: auto;
-            display: block;
-        }
-    </style>
 </head>
 
 <body>
@@ -80,10 +63,10 @@
                 </div>
 
                 <!-- Connection QR displayed directly in the Hub view -->
-                <div v-if="currentSyncQR" class="sync-container card" style="margin-top: 20px; text-align: center;">
+                <div v-if="currentSyncQR" class="sync-container card">
                     <p><strong>Step 1:</strong> Station scans this</p>
                     <div id="kitchen-qr-container" class="qr-box"></div>
-                    <button class="btn primary" @click="scanStationReply" style="margin-top: 10px;">Step 2: Scan Station Reply</button>
+                    <button class="btn primary" @click="scanStationReply">Step 2: Scan Station Reply</button>
                 </div>
             </div>
 
@@ -127,8 +110,7 @@
             </div>
             <div class="debug-panel" v-if="debugLogs.length">
                 <h4>Debug Logs</h4>
-                <div
-                    style="max-height: 150px; overflow-y: auto; font-size: 10px; background: #000; color: #0f0; padding: 5px;">
+                <div class="debug-logs-container">
                     <div v-for="log in debugLogs">{{ log }}</div>
                 </div>
             </div>
