@@ -1,6 +1,7 @@
 export class WebRTCManager {
-    constructor(onMessageCallback, logger = console.log) {
+    constructor(onMessageCallback, logger = console.log, onStatusChange = null) {
         this.onMessage = onMessageCallback;
+        this.onStatusChange = onStatusChange;
         this.log = (msg) => logger(`[WebRTC] ${msg}`);
         this.spokes = { GRILL: { peer: null, channel: null }, PUB: { peer: null, channel: null } };
         this.hub = { peer: null, channel: null };
@@ -76,9 +77,49 @@ export class WebRTCManager {
         });
     }
 
+    /**
+     * Extracts local IP addresses from an SDP string to check for local network presence.
+     */
+    _extractConnectivityInfo(sdp) {
+        const lines = sdp.split('\n');
+        const info = {
+            ips: [],
+            hasHost: false,
+            hasRelay: false
+        };
+
+        lines.forEach(line => {
+            if (line.startsWith('a=candidate')) {
+                const parts = line.split(' ');
+                const ip = parts[4];
+                const type = parts[7]; // 'host', 'srflx', or 'relay'
+                
+                if (type === 'host' && !info.ips.includes(ip)) info.ips.push(ip);
+                if (type === 'host') info.hasHost = true;
+                if (type === 'relay') info.hasRelay = true;
+            }
+        });
+        return info;
+    }
+
     _setupPeerListeners(peer, name) {
         peer.onconnectionstatechange = () => {
             this.log(`${name} Connection State: ${peer.connectionState}`);
+            if (this.onStatusChange) {
+                this.onStatusChange(name, peer.connectionState);
+            }
+            
+            if (['failed', 'disconnected', 'closed'].includes(peer.connectionState)) {
+                this.log(`${name} connection lost. Cleaning up...`);
+                // Clear references so a new connection can be established
+                if (this.hub.peer === peer) this.hub = { peer: null, channel: null };
+                for (const station in this.spokes) {
+                    if (this.spokes[station].peer === peer) {
+                        this.spokes[station] = { peer: null, channel: null };
+                    }
+                }
+            }
+
             if (peer.connectionState === 'connected') {
                 // Cancel the watchdog if we connect successfully
                 if (peer._connTimer) clearTimeout(peer._connTimer);
@@ -128,9 +169,13 @@ export class WebRTCManager {
         this.log("Waiting for ICE candidates...");
         await this._waitForICE(peer);
         
-        const localDesc = JSON.stringify(peer.localDescription);
-        if (localDesc.indexOf("typ relay") === -1 && localDesc.indexOf("typ srflx") === -1) {
-            this.log("Warning: No public/Relay candidates found.");
+        const info = this._extractConnectivityInfo(peer.localDescription.sdp);
+        this.log(`Local Network IPs found: ${info.ips.join(', ') || 'None'}`);
+        
+        if (!info.hasHost) {
+            this.log("Warning: No local (host) candidates found. LAN connection may fail.");
+        } else if (!info.hasRelay) {
+            this.log("Notice: No Relay (TURN) candidates. This requires a direct local path.");
         }
 
         this.log("Offer ready for scanning.");
@@ -162,6 +207,11 @@ export class WebRTCManager {
         };
 
         const offer = this._restoreSDP(offerString);
+        
+        // Analyze the incoming offer's network info
+        const remoteInfo = this._extractConnectivityInfo(offer.sdp);
+        this.log(`Kitchen reported local IPs: ${remoteInfo.ips.join(', ')}`);
+
         await peer.setRemoteDescription(offer);
         
         const answer = await peer.createAnswer();

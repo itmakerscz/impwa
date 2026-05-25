@@ -12,6 +12,7 @@ WebAssembly.instantiateStreaming(fetch('wasm/qr_generator.wasm'), go.importObjec
 createApp({
     setup() {
         const currentRole = ref(null);
+        const stationStatus = ref({ GRILL: 'disconnected', PUB: 'disconnected' });
 
         const debugLogs = ref([]);
         
@@ -31,7 +32,17 @@ createApp({
 
         const network = new WebRTCManager(
             (payload) => handleNetworkMessage(payload),
-            (msg) => addLog(msg)
+            (msg) => addLog(msg),
+            (name, state) => {
+                if (stationStatus.value[name] !== undefined) {
+                    stationStatus.value[name] = state;
+                }
+                // If a station loses connection to the Hub, clear the local QR
+                if (currentRole.value !== 'KITCHEN' && ['failed', 'disconnected'].includes(state)) {
+                    const container = document.getElementById('station-qr-container');
+                    if (container) container.innerHTML = '';
+                }
+            }
         );
         
         const isScanning = ref(false);
@@ -39,6 +50,7 @@ createApp({
         const hasTorch = ref(false);
         const isTorchOn = ref(false);
         const manualInput = ref('');
+        const currentSyncQR = ref(null);
         let activeScanCallback = null;
 
         let html5QrCode = null;
@@ -53,6 +65,7 @@ createApp({
             manualInput.value = '';
             activeScanCallback = null;
             hasTorch.value = false;
+            currentSyncQR.value = null;
         };
 
         const startScanner = async (onScanSuccess) => {
@@ -122,7 +135,9 @@ createApp({
         const renderQR = (dataString, containerId) => {
             if (!goWasmLoaded) return alert("Wasm loading...");
             const qrDataURI = window.generateGolangQRCode(dataString);
-            document.getElementById(containerId).innerHTML = `<img src="${qrDataURI}" alt="QR" />`;
+            const el = document.getElementById(containerId);
+            if (el) el.innerHTML = `<img src="${qrDataURI}" alt="QR" />`;
+            return qrDataURI;
         };
 
         const setRole = (role) => currentRole.value = role;
@@ -131,14 +146,17 @@ createApp({
         const generateSyncQR = async (stationName) => {
             pendingStationSync = stationName;
             const offerStr = await network.createOfferForStation(stationName);
-            renderQR(offerStr, 'qr-container');
+            currentSyncQR.value = offerStr;
+            // Render to the hub container instead of the scanner overlay
+            setTimeout(() => renderQR(offerStr, 'kitchen-qr-container'), 100);
         };
 
-        const scanStationAnswer = () => {
+        const scanStationReply = () => {
             startScanner(async (answerStr) => {
                 if (answerStr && pendingStationSync) {
                     await network.hubAcceptAnswer(pendingStationSync, answerStr);
-                    document.getElementById('qr-container').innerHTML = `<p class="status-confirmed">${pendingStationSync} Connected!</p>`;
+                    addLog(`${pendingStationSync} connection completed.`);
+                    currentSyncQR.value = null; // Hide the QR and button after success
                 }
             });
         };
@@ -173,8 +191,8 @@ createApp({
         };
 
         return {
-            currentRole, setRole, inventory, kitchenTickets, myRequests, debugLogs,
-            generateSyncQR, scanStationAnswer, markAsDispatched, scanKitchenQR, requestItem,
+            currentRole, setRole, inventory, kitchenTickets, myRequests, debugLogs, currentSyncQR, stationStatus,
+            generateSyncQR, markAsDispatched, scanKitchenQR, requestItem, scanStationReply,
             isScanning, stopScanner, cameraPermissionDenied, manualInput, submitManualInput,
             hasTorch, isTorchOn, toggleTorch
         };

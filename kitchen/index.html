@@ -53,10 +53,21 @@
             </header>
 
             <div class="network-controls">
-                <button class="btn" @click="generateSyncQR('GRILL')">Sync Grill</button>
-                <button class="btn" @click="generateSyncQR('PUB')">Sync Pub</button>
-                <button class="btn secondary" @click="scanStationAnswer()">Scan Station Reply</button>
-                <div id="qr-container" class="qr-box"></div>
+                <div v-for="name in ['GRILL', 'PUB']" :key="name" class="station-status-item">
+                    <span v-if="stationStatus[name] === 'connected'" class="status-badge connected">
+                        ✅ {{ name }} Connected
+                    </span>
+                    <button v-else class="btn" @click="generateSyncQR(name)">
+                        Sync {{ name }}
+                    </button>
+                </div>
+
+                <!-- Connection QR displayed directly in the Hub view -->
+                <div v-if="currentSyncQR" class="sync-container card" style="margin-top: 20px; text-align: center;">
+                    <p><strong>Step 1:</strong> Station scans this</p>
+                    <div id="kitchen-qr-container" class="qr-box"></div>
+                    <button class="btn primary" @click="scanStationReply" style="margin-top: 10px;">Step 2: Scan Station Reply</button>
+                </div>
             </div>
 
             <div class="ticket-board">
